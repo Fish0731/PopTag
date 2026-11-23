@@ -11,6 +11,8 @@ import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelOption
 import io.netty.channel.ServerChannel
 import io.netty.channel.SimpleChannelInboundHandler
+import io.netty.channel.epoll.Epoll
+import io.netty.channel.epoll.EpollServerSocketChannel
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.ByteToMessageDecoder
@@ -317,12 +319,15 @@ object PassportServer {
         return decodeStr(plainBuf)
     }
 
+    internal fun createServerChannel(useEpoll: Boolean = Epoll.isAvailable()): ServerChannel =
+        if (useEpoll) EpollServerSocketChannel() else NioServerSocketChannel()
+
     fun start() {
         if (!isEN) return
 
         ServerBootstrap().apply {
             group(NettyServer.workerGroup, NettyServer.workerGroup)
-            channelFactory(ChannelFactory<ServerChannel> { NioServerSocketChannel() })
+            channelFactory(ChannelFactory<ServerChannel> { createServerChannel() })
             option(ChannelOption.SO_BACKLOG, 64)
             childOption(ChannelOption.TCP_NODELAY, true)
             childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)

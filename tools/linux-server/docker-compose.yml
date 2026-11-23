@@ -1,0 +1,23 @@
+services:
+  poptag-server:
+    build:
+      context: ../..
+      dockerfile: tools/linux-server/Dockerfile
+    container_name: poptag-server
+    restart: unless-stopped
+    environment:
+      # 留空时自动读取 server/Config.yaml 中的 ServerIP；填写具体公网 IPv4（如 123.45.67.89）时优先使用此项
+      POPTAG_SERVER_IP: ""
+      JAVA_OPTS: "-Xms128m -Xmx512m -Dfile.encoding=UTF-8"
+    ports:
+      - "3838:3838/tcp"
+      - "4848:4848/tcp"
+      - "4849:4849/tcp"
+      - "47611:47611/tcp"
+      - "3839:3839/udp"
+      - "4849:4849/udp"
+      - "4151-4160:4151-4160/udp"
+    volumes:
+      - ../../server/Config.yaml:/app/server/Config.yaml
+      - ../../server/data:/app/server/data
+      - ./logs:/app/logs
