@@ -1,5 +1,6 @@
 package bnbemu.packet
 
+import bnbemu.NetConfig
 import bnbemu.netty.PKT
 
 fun UnkResult() = PKT {
@@ -7,6 +8,6 @@ fun UnkResult() = PKT {
 
     Encode1()
     Encode4()
-    Encode4(0x7F000001)
+    Encode4(NetConfig.serverIpInt)
     Encode2(3838)
 }

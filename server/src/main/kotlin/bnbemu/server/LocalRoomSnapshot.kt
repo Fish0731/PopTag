@@ -6,6 +6,10 @@ import bnbemu.packet.room.SelectMap
 
 /** Restore the existing room after op155; never recreate its selected NPCs. */
 fun sendLocalRoomSnapshot(c: ClientSocket, includeInventory: Boolean = true) {
+    if (Lobby.isRoomActive && Lobby.humanCount() > 1 && Lobby.isInRoom(c)) {
+        Lobby.sendPostMatchRoomSnapshot(c)
+        return
+    }
     val player = Room.slots.firstOrNull { it.user?.c === c }?.user
     c.send(SessionSimpleInfo(Room.localGameMode), UserSimpleInfoResult(),
         SessionInfoResult(c.users), Unk113(), PracticeRoomInfo(localBombStyle(player), player),

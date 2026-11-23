@@ -13,7 +13,10 @@ import bnbemu.packet.room.SlotBomber
 //     S→C op 103 (PracticeSlot103), 载荷 7B = E2(slotIdx) E1Bool(isAI) E2(newLevel) E2(flags)
 // ============================================================================
 val AILevelChangeReq = PKTHandler { c ->
-    if (readableBytes() != 4) return@PKTHandler
+    if (!bnbemu.server.Lobby.canHostModifyRoom(c) || readableBytes() != 4) {
+        skipBytes(readableBytes())
+        return@PKTHandler
+    }
     val chief = Decode1
     val slotIdx = Decode1
     val newLevel = Decode1

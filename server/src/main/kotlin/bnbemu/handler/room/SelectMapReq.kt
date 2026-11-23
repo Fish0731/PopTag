@@ -14,17 +14,27 @@ import bnbemu.server.Room
 // 兼容: CStage::OnStageStateSync (0x004F73B2) 退出当前舞台请求: Encode1(0)
 val SelectMapReq = PKTHandler { c ->
     if (readableBytes() >= 6) {
+        if (!bnbemu.server.Lobby.canHostModifyRoom(c)) {
+            skipBytes(readableBytes())
+            return@PKTHandler
+        }
         val themeId = Decode2
         val mapId = Decode4
         println("SelectMapReq -> themeId: $themeId, mapId: $mapId")
         Room.themeId = themeId
         Room.mapId = mapId
         Room BC SelectMap(result = 0, themeId = themeId, mapId = mapId)
+        bnbemu.server.Lobby.broadcastRooms()
     } else if (readableBytes() >= 2) {
+        if (!bnbemu.server.Lobby.canHostModifyRoom(c)) {
+            skipBytes(readableBytes())
+            return@PKTHandler
+        }
         val map = Decode2
         println("SelectMapReq (legacy 2B) -> mapId: $map")
         Room.mapId = map
         Room BC SelectMap(result = 0, themeId = 0, mapId = map)
+        bnbemu.server.Lobby.broadcastRooms()
     } else if (readableBytes() >= 1) {
         val stageState = Decode1
         if (stageState == 0) {

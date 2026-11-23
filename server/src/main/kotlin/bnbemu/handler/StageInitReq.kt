@@ -24,6 +24,7 @@ import bnbemu.packet.localUserMapEntry
  *     UserSimpleInfoResult, SessionInfoResult, MyPageInfo, ItemDef, Unk310, Unk302]
  */
 val StageInitReq = PKTHandler { c ->
+    bnbemu.server.Lobby.onStageInit(c)
     bnbemu.server.Room.cancelPendingReturn()
     c.send(
         Unk310(), Unk302(),

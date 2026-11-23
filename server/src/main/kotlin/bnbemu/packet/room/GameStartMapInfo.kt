@@ -77,8 +77,15 @@ fun GameStartMapInfo(
         val bomberId = slot?.bomber?.toInt()?.let { if (it == 0) 5 else it } ?: 5
         // Live solo practice also uses the room's selected color. Keep the
         // no-argument captured packet unchanged for protocol replay.
-        val team = if (gameOptions == 0 || useSelectedColors && gameOptions == 15)
-            (slot?.color?.toInt() ?: 0).coerceIn(0, 8) else if (i == 0 || slot?.user != null) 0 else 8
+        val team = if (gameOptions == 0 || useSelectedColors && gameOptions == 15) {
+            (slot?.color?.toInt() ?: 0).coerceIn(0, 8)
+        } else if (slot?.user != null && !slot.isAI) {
+            0
+        } else if (i == 0 && Room.slots.all { it.user == null }) {
+            0
+        } else {
+            8
+        }
         val spawn = if (i < spawnPositions.size) spawnPositions[i] else i
 
         Encode1(i)

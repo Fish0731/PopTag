@@ -61,15 +61,15 @@ object LocalPlayers {
     fun remember(user: User) {
         if(user.accountKey.lowercase(Locale.ROOT) !in hiddenAccounts) history.record(LocalPlayerRecord(user.accountKey,user.name,user.id))
     }
+    const val MAX_SESSION_ENTRIES = 11
     fun entries(c: ClientSocket): List<LocalPlayerRecord> {
         c.users.forEach(::remember)
-        // CUserMap::ReadList (4E086B) has eleven entries per page, although
-        // its count is a byte. Retain all history on disk; never overrun that
-        // native first-page buffer. Pagination belongs to the multiplayer work.
-        // S81's slot indexes must follow the client's 1P,2P order; sorting
-        // both local users into one priority bucket preserves stale history order.
-        val current=c.users.map {LocalPlayerRecord(it.accountKey,it.name,it.id)}
-        return localPlayerDisplayEntries(current,history.list().filter {it.accountKey.lowercase(Locale.ROOT) !in hiddenAccounts})
+        val current = c.users.map { LocalPlayerRecord(it.accountKey, it.name, it.id) }
+        val online = Lobby.onlineUsers().map { LocalPlayerRecord(it.accountKey, it.name, it.id) }
+        return localPlayerDisplayEntries(
+            current + online,
+            history.list().filter { it.accountKey.lowercase(Locale.ROOT) !in hiddenAccounts }
+        )
     }
     fun sessionEntries(c: ClientSocket): List<SessionEntry> = entries(c).filter {it.accountKey.lowercase(Locale.ROOT) !in hiddenAccounts}.map { e ->
         val level=c.users.firstOrNull { it.accountKey.equals(e.accountKey,true) }?.level

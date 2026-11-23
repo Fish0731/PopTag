@@ -6,6 +6,6 @@ import bnbemu.server.Room
 
 // Native 54D047: map replacement finished, C131 E1(1).
 val MonsterBoardLoadedReq = PKTHandler { c ->
-    if (readableBytes() == 1 && Decode1 == 1) Room.onMonsterBoardLoaded(c)
+    if (readableBytes() == 1 && Decode1 == 1) bnbemu.server.Lobby.handleMonsterBoardLoaded(c)
     else skipBytes(readableBytes())
 }

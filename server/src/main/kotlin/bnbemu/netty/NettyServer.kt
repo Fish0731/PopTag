@@ -58,6 +58,7 @@ object NettyServer {
 
             childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
+                    UdpRelay.installIdleTimeout(ch, 600)
                     ch.pipeline().addLast(
                         Decoder(),
                         Encoder(),
@@ -70,7 +71,7 @@ object NettyServer {
         }
 
         TCP_PORTS.forEach { port ->
-            tcpBoot.bind("127.0.0.1", port).addListener { future ->
+            tcpBoot.bind("0.0.0.0", port).addListener { future ->
                 if (future.isSuccess) {
                     println("Bind to TCP port: $port")
                 } else {
@@ -91,7 +92,7 @@ object NettyServer {
             option(ChannelOption.SO_BROADCAST, true)
             option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
             handler(handler)
-        }.bind("127.0.0.1", port).addListener { future ->
+        }.bind("0.0.0.0", port).addListener { future ->
             if (future.isSuccess) {
                 println("Bind to UDP port: $port")
             } else {
@@ -117,6 +118,7 @@ object HandlerRouterUDP : SimpleChannelInboundHandler<DatagramPacket>() {
     }
 
     override fun channelRead0(ctx: ChannelHandlerContext, packet: DatagramPacket) {
+        bnbemu.server.Lobby.onUdpDatagram(packet)
         val sender = packet.sender()
         val buf = packet.content()
 

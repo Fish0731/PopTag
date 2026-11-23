@@ -1,6 +1,7 @@
 package bnbemu.packet
 
 import bnbemu.ACP
+import bnbemu.NetConfig
 import bnbemu.netty.PKT
 import java.io.ByteArrayOutputStream
 
@@ -63,7 +64,7 @@ class ChannelEntry(
         out.u32le(maxCount)
         out.u8(curCount)
         out.u8(mapNo)
-        out.ipv4(ip)
+        out.ipv4(if (ip == "127.0.0.1") NetConfig.serverIp else ip)
         // 14B 恆定欄位 (抓包原樣, 語義未釘死; bigMap 位於其中第 10 位元組)
         out.u8(0x01)
         out.u8(0x00)
