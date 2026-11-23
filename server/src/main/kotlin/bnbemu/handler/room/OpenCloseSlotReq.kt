@@ -27,6 +27,10 @@ import bnbemu.server.state
 //     S→C op 110 (DoOpenCloseSlot), 载荷 1B = E1(slotIdx)
 // ============================================================================
 val OpenCloseSlotReq = PKTHandler { c ->
+    if (!bnbemu.server.Lobby.canHostModifyRoom(c)) {
+        skipBytes(readableBytes())
+        return@PKTHandler
+    }
     if (isEN) {
         val raw = Decode1
         val slotIdx = (raw shr 4) and 0x0F
@@ -34,7 +38,7 @@ val OpenCloseSlotReq = PKTHandler { c ->
         // CSlotStage sends C89 and sets stage+0x2f64=2 (native 4F68D7).
         // Only S106 clears that wait at 4EFD1C..4EFD27, including no-op requests.
         // Never drop a valid seat request, or select-map/start remain disabled.
-        if (existing.user != null || slotIdx == 0) {
+        if (existing.user != null || slotIdx == 0 || slotIdx == bnbemu.server.Lobby.hostSlot) {
             c.send(PracticeSlotReady(slotIdx, if (existing.state.toInt() and FLAG_CLOSED != 0) 1 else 0))
             return@PKTHandler
         }
@@ -53,6 +57,7 @@ val OpenCloseSlotReq = PKTHandler { c ->
             seat.isAI = false
             seat.state = if (isClosing) FLAG_CLOSED else 0
             Room.BC(PracticeSlotReady(slotIdx, if (isClosing) 1 else 0))
+            bnbemu.server.Lobby.broadcastRooms()
             return@PKTHandler
         }
 

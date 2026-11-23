@@ -328,10 +328,11 @@ object PassportServer {
             childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
             childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
+                    UdpRelay.installIdleTimeout(ch, 30)
                     ch.pipeline().addLast(PassportDecoder(), PassportHandler)
                 }
             })
-        }.bind("127.0.0.1", PORT).addListener { future ->
+        }.bind("0.0.0.0", PORT).addListener { future ->
             if (future.isSuccess) {
                 println("Bind to TCP port: $PORT (passport)")
             } else {
@@ -371,24 +372,30 @@ private object PassportHandler : SimpleChannelInboundHandler<PassportFrame>() {
         val reply = when (frame.cmd) {
             0x000B -> {
                 val req = PassportServer.parseLoginReq(frame.payload)
-                val username = req?.username?.takeIf { it.isNotBlank() } ?: "kcworms1"
-                val password = req?.password ?: ""
-                println("[Passport] local login received")
+                val rawUser = req?.username?.takeIf { it.isNotBlank() }?.trim() ?: "kcworms1"
+                val chosen = bnbemu.server.Lobby.allocateUniqueLoginName(rawUser)
+                val key = chosen.lowercase()
+                bnbemu.server.Lobby.evictOfflinePassportAccountsIfNeeded()
 
-                // 註冊/查詢帳號
-                val account = PassportServer.ACCOUNTS.computeIfAbsent(username.lowercase()) {
+                // 註冊/查詢帳號 (保留既有帳號並避免並發重名頂號)
+                val account = PassportServer.ACCOUNTS.computeIfAbsent(key) {
+                    val baseId = (chosen.hashCode() and 0x7FFF).coerceAtLeast(1000)
+                    val uid = bnbemu.server.Lobby.allocateUniqueUserId(chosen, baseId)
                     PassportServer.PassportAccount(
-                        username = username,
-                        charName = username,
-                        userId = (username.hashCode() and 0x7FFF).coerceAtLeast(1000)
+                        username = chosen,
+                        charName = chosen,
+                        userId = uid
                     )
                 }
                 PassportServer.lastAccount = account
+                if (debugMode) {
+                    println("[Passport] local login received -> user=${account.username} (raw=$rawUser, uid=${account.userId})")
+                }
 
                 PassportServer.buildReply0C(
                     returnCode = 0,
                     sessionType = "nmco_session",
-                    passportId = "NGP$username"
+                    passportId = "NGP${account.username}"
                 )
             }
             0x002D -> {

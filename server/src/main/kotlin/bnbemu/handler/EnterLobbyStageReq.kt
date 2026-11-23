@@ -1,11 +1,20 @@
 package bnbemu.handler
 
 import bnbemu.netty.PKTHandler
-
 import bnbemu.packet.EnterLobbyStage
+import bnbemu.packet.SessionList
+import bnbemu.server.Lobby
+import bnbemu.server.Room
 
-// CChannelPool::OnEnterLobbyStage
 val EnterLobbyStageReq = PKTHandler { c ->
-    bnbemu.server.Room.cancelPendingReturn()
-    c send EnterLobbyStage()
+    Lobby.leaveRoom(c, isDisconnect = false)
+    if (Lobby.humanCount() == 0) {
+        Room.cancelPendingReturn()
+    }
+    Lobby.join(c)
+    c.send(
+        EnterLobbyStage(),
+        SessionList(Lobby.sessionEntries(c)),
+        Lobby.roomListPacket(),
+    )
 }

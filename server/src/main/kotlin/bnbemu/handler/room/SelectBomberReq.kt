@@ -30,6 +30,10 @@ import bnbemu.server.bomber
 // 与 TW 的差异: TW 表里 SelectBomberReq = op 99, 但真实 EN 客户端发的是 op 87;
 // op 99 (0x61201C) 在 EN 里另有用途, 故 EN 分支单独绑定。
 val SelectBomberReq = PKTHandler { c ->
+    if (bnbemu.server.Lobby.isRoomActive && bnbemu.server.Lobby.isInGame) {
+        skipBytes(readableBytes())
+        return@PKTHandler
+    }
     val slotIdx = Decode1
     val bomberIdx = Decode1
 

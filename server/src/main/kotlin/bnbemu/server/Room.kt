@@ -21,7 +21,7 @@ object Room {
     // Allow the result intro and XP/coin animations to finish before returning.
     // Intermediate monster boards keep their independent five-second transition.
     internal var returnToRoomDelayMs = 10000L
-    @Volatile private var matchRunning = false
+    @Volatile internal var matchRunning = false
     @Volatile private var monsterDeadlineNanos: Long? = null
     internal var monsterTimeLimitMs = bnbemu.packet.MONSTER_TIME_LIMIT_SEC * 1000L
     @Volatile private var aiBattleDeadlineNanos: Long? = null
@@ -44,9 +44,9 @@ object Room {
     private var robotTransformed = false
     private val monsterKickRequests = mutableMapOf<Int, Pair<ByteArray, Long>>()
     private var monsterTransitionPending = false
-    private var monsterBoardLoadPending = false
-    private var monsterBoardStartSent = false
-    private var economyReceipt = ""
+    internal var monsterBoardLoadPending = false
+    internal var monsterBoardStartSent = false
+    internal var economyReceipt = ""
     private var economySettled = false
     private val pendingWalletNotices = mutableMapOf<ClientSocket,String>()
     private fun loadedMonsterStage(): LocalMonsterStage? {
@@ -89,7 +89,6 @@ object Room {
         }
     }
     internal var monsterBombContext = 0
-        private set
 
     fun observeBombContext(slotId: Int, context: Int, client: ClientSocket) {
         if (!matchRunning || localGameMode != 14 || context !in 0..2) return
@@ -235,7 +234,7 @@ object Room {
             monsterDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(monsterTimeLimitMs)
         }
         if (matchRunning && localGameMode == 14 && !monsterControlGranted && !gameOverSent) {
-            val controller = slots.indexOfFirst { it.user != null }
+            val controller = slots.indexOfFirst { it.user != null && !it.isAI }
             if (controller < 0) return
             monsterControlGranted = true
             // Initial map monsters are already registered locally, but carry owner
@@ -808,6 +807,7 @@ object Room {
     // ⚠️ 不要再给落败槽位广播 S→C op 159: 客户端本地阵亡时已经播过死亡动画 (OnDie 是本地函数),
     //    服务端只是"不知道", 再来一条 159 会让死亡动作重播。
     fun onLastTeamStanding(slotId: Int) {
+        if (localGameMode == 14) return
         if (slotId !in slots.indices) return
         if (gameOverSent) return
 
@@ -1105,5 +1105,6 @@ object Room {
         nextScriptBombId = 600
         lastAirplaneTime = 0L
         resetMatchState()
+        Lobby.onRoomReset()
     }
 }

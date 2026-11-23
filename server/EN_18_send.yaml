@@ -145,3 +145,13 @@ MonsterBossLocked: 151
 MonsterSpeed: 151
 
 MonsterLaser: 268
+
+ChatShow: 21
+WhisperShow: 23
+JoinRoomResult: 84
+RoomListDelta: 86
+RoomListOf: 87
+SlotPlayerInfo: 100
+LeaveSlot: 101
+SlotMeta: 102
+GameBoardPeers: 136

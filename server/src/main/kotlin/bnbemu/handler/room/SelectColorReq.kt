@@ -12,10 +12,12 @@ import bnbemu.server.color
 //    客户端不会解锁 → 表现为"点颜色没反应且之后一直点不动"。
 // EN 客户端的 op 98 (0x4F0634) 是一个带记录列表的上报包, 与颜色无关。
 val SelectColorReq = PKTHandler { c ->
+    if (readableBytes() < 1) return@PKTHandler
     val data = Decode1
     val slotIdx = (data shr 4) and 0x0F
     val colorIdx = data and 0x0F
 
+    if (!bnbemu.server.Lobby.canSelectColor(c, slotIdx)) return@PKTHandler
     if (slotIdx in Room.slots.indices) {
         Room.slots[slotIdx].color = colorIdx
         // 广播给房内所有人 (含请求者, 请求者的等待锁靠本包解除)。

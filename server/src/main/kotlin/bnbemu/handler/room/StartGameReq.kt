@@ -69,6 +69,7 @@ val StartGameReq = PKTHandler { c ->
 
 /** Start a board through the normal prepare-stage handshake. */
 fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, replenish: Boolean = true) {
+    if (!bnbemu.server.Lobby.checkMultiplayerStartAllowed(c, replenish)) return
     // A user-started raid always begins at part one, including after reconnect
     // from a room whose old selected map was an intermediate stage.
     if (Room.localGameMode == 14 && replenish) {
@@ -101,7 +102,8 @@ fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, rep
         bnbemu.server.needleStockPackets(c.users.size).forEach { c send it }   // 先建持有物, op198 热键穿戴的前置
         c send bnbemu.server.localUserInventory(user, practice = true, inGame = true)
     }
-    c.send(
+    bnbemu.server.Lobby.broadcastMatchStart(
+        c,
         PracticeAiLevel(),
         GameStartMapInfo(
             randomSeed = Random.nextInt(0x7FFFFFFF),
@@ -115,18 +117,20 @@ fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, rep
         ),
         PracticeStartInfo(bombStyle = bnbemu.server.localBombStyle(c.users.firstOrNull()), user = c.users.firstOrNull()),
     )
-    c.users.getOrNull(1)?.let { second ->
-        c send PracticeStartInfo(bombStyle=bnbemu.server.localBombStyle(second),user=second,slot=1)
+    if (bnbemu.server.Lobby.humanCount() <= 1) {
+        c.users.getOrNull(1)?.let { second ->
+            c send PracticeStartInfo(bombStyle = bnbemu.server.localBombStyle(second), user = second, slot = 1)
+        }
+        c.send(
+            // Keep the stage-clear clock and server deadline on the same time limit.
+            PracticeBoard(timeLimitSec = when (Room.localGameMode) {
+                14 -> bnbemu.packet.MONSTER_TIME_LIMIT_SEC
+                15 -> 0
+                16 -> bnbemu.packet.AI_BATTLE_TIME_LIMIT_SEC
+                else -> null
+            }),
+        )
     }
-    c.send(
-        // Keep the stage-clear clock and server deadline on the same time limit.
-        PracticeBoard(timeLimitSec = when (Room.localGameMode) {
-            14 -> bnbemu.packet.MONSTER_TIME_LIMIT_SEC
-            15 -> 0
-            16 -> bnbemu.packet.AI_BATTLE_TIME_LIMIT_SEC
-            else -> null
-        }),
-    )
 
     // 啟動對局主循環 (onTick: 水泡倒计时与 op 138 爆炸状态同步)
     Room.startGame(loadedMapId = mapId)

@@ -1,22 +1,21 @@
 package bnbemu.packet
 
+import bnbemu.NetConfig
 import bnbemu.isEN
 import bnbemu.netty.PKT
-import bnbemu.netty.toBA
 
 // server = CMultiServer::Init
 fun MultiServerInit() = PKT {
     if (isEN) {
-        // EN 真實伺服器首連推送 #4 (start.pcap sq=52): 伺服器列表
-        // 客戶端據此取得 login 伺服器地址並寫 multisvr.ssd 快取, 缺它客戶端報"無法連接登入伺服器"
-        // 結構: Encode1Bool(true) + Encode4(46) + 44B SSD 資料塊 + Encode2(0) + Encode1(0)
-        // SSD 資料塊解碼 (每 dword BE ^ 0x96CA5395 後 LE 寫回) = multisvr.ssd 快取體:
-        //   18290000 | 00 00 01 06 00 00 00 "PopTag" | 0b 00 00 00 "Main Server"
-        //   | 00 00 00 00 | 01 00 | IPv4 | port(0x0EFE=3838, LE)
-        // IP 原抓包為 66.135.19.7, 已改寫為 127.0.0.1 (與 tools/patch_ip.py 一致)
+        val plain = EN_MULTISVR_TEMPLATE.clone()
+        val ip = NetConfig.serverIpInt
+        plain[38] = (ip ushr 24).toByte()
+        plain[39] = (ip ushr 16).toByte()
+        plain[40] = (ip ushr 8).toByte()
+        plain[41] = ip.toByte()
         Encode1Bool(true)
         Encode4(46)
-        EncodeBuffer(EN_MULTISVR_BLOB)
+        EncodeBuffer(ssdEncode(plain))
         Encode2(0)
         Encode1(0)
     } else {
@@ -27,10 +26,11 @@ fun MultiServerInit() = PKT {
     }
 }
 
-// 44B 編碼塊 (其後的 Encode2(0) 原樣尾 = 抓包 a5 69, 共 46B 子塊)
-// 生成工具: tools/extract_first_push.py
-private val EN_MULTISVR_BLOB = """
-    96ca7a8d 90cb5395 c6ca5395 f79e23fa
-    96ca58f2 ffab1e95 f39973fb e4af25e7
-    96ca5395 96b55394 98345295
-""".toBA()
+private val EN_MULTISVR_TEMPLATE = byteArrayOf(
+    0x18, 0x29, 0x00, 0x00, 0x00, 0x00, 0x01, 0x06,
+    0x00, 0x00, 0x00, 0x50, 0x6F, 0x70, 0x54, 0x61,
+    0x67, 0x0B, 0x00, 0x00, 0x00, 0x4D, 0x61, 0x69,
+    0x6E, 0x20, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x7F, 0x00,
+    0x00, 0x01, 0xFE.toByte(), 0x0E
+)

@@ -34,6 +34,13 @@ import bnbemu.server.*
 // 玩家注册进 Room slot 0 (leader), 其余 7 槽设为 AI, 以便 AI 自动行动广播 (Room.BC) 能送达。
 // server = C???::OnCreatePracticeSession (原始名称未知, 绑定见 EN_18_recv.yaml)
 val CreatePracticeSessionReq = PKTHandler { c ->
+    if (!Lobby.canCreateRoom(c)) {
+        skipBytes(readableBytes())
+        if (c.ch?.isActive == true) {
+            c.send(bnbemu.packet.CreateSessionResult(1), Lobby.roomListPacket())
+        }
+        return@PKTHandler
+    }
     val request = decodeLocalRoomRequest() ?: return@PKTHandler
     if(request.characters.size != c.users.size.coerceAtMost(2)) return@PKTHandler
     // A new room must also stop the previous match and clear its running flag.
@@ -113,5 +120,5 @@ val CreatePracticeSessionReq = PKTHandler { c ->
     bnbemu.server.needleStockPackets(c.users.size).forEach { c send it }   // 先建持有物, op198 热键穿戴的前置
     c.send(localUserInventory(player, practice = true))
     if (request.gameMode == 16) c send bnbemu.packet.NpcAvailability()
-    c.send(PracticeUnk423())
+    Lobby.handlePracticeRoomCreated(c, PracticeUnk423())
 }

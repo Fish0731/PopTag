@@ -1,5 +1,6 @@
 package bnbemu.packet
 
+import bnbemu.NetConfig
 import bnbemu.isEN
 import bnbemu.netty.PKT
 
@@ -14,7 +15,7 @@ fun ResConnectToSvr(res: Int, ChannelID: Int, flags: Int) = PKT {
     if (res == 1) {
         Encode1(ChannelID)
         Encode4(flags)
-        Encode4(0x7F000001)
+        Encode4(NetConfig.serverIpInt)
         Encode2(
             when {
                 // EN 單埠拓撲: 進頻道連線同樣走 3838 (真實抓包回應 E2(3838))

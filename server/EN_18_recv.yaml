@@ -130,3 +130,9 @@ MonsterCreateReq: 136
 
 MonsterAttackReq: 117
 MonsterBoardLoadedReq: 131
+
+JoinRoomReq: 76
+QuickPlayReq: 77
+ReadyReq: 84
+WhisperReq: 22
+KickPlayerReq: 90

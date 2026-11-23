@@ -122,64 +122,69 @@ class Encoder : MessageToByteEncoder<PKT>() {
         }
 
     override fun encode(ctx: ChannelHandlerContext, pkt: PKT, out: ByteBuf) {
-        val opcode = OpcodeManager.getSendOp(pkt.javaClass) // m_nPacketType
-        SendPacketBase(out, m_nCipherDegree).apply { // 操作buf = 操作out
-            // 把writerIndex設在header結束的位置 來寫入payload
-            buf.writerIndex(headerLen)
+        NetConfig.enterContext(ctx)
+        try {
+            val opcode = OpcodeManager.getSendOp(pkt.javaClass) // m_nPacketType
+            SendPacketBase(out, m_nCipherDegree).apply { // 操作buf = 操作out
+                // 把writerIndex設在header結束的位置 來寫入payload
+                buf.writerIndex(headerLen)
 
-            when {
-                m_nCipherDegree == 3 -> Encode2(opcode)
-                m_nCipherDegree == 0 && isEN -> {
-                    // 真實 EN banner 無 opcode, 包體即 ConnEstablished 內容
+                when {
+                    m_nCipherDegree == 3 -> Encode2(opcode)
+                    m_nCipherDegree == 0 && isEN -> {
+                        // 真實 EN banner 無 opcode, 包體即 ConnEstablished 內容
+                    }
+                    else -> Encode1(opcode)
                 }
-                else -> Encode1(opcode)
-            }
-            pkt.encode(this)
+                pkt.encode(this)
 
-            val payloadLen = buf.writerIndex() - headerLen
+                val payloadLen = buf.writerIndex() - headerLen
 
-            // 根據明文payload產生CRC
-            when (m_nCipherDegree) {
-                1 ->
-                    buf.writeInt(CRC32.UpdateCRC(dwCrcKey = m_nPacketSndSeq, buf, headerLen, payloadLen))
+                // 根據明文payload產生CRC
+                when (m_nCipherDegree) {
+                    1 ->
+                        buf.writeInt(CRC32.UpdateCRC(dwCrcKey = m_nPacketSndSeq, buf, headerLen, payloadLen))
 
-                2, 3 ->
-                    buf.writeByte(CRC8.UpdateCRC(dwCrcKey = m_nPacketSndSeq, buf, headerLen, payloadLen))
-            }
+                    2, 3 ->
+                        buf.writeByte(CRC8.UpdateCRC(dwCrcKey = m_nPacketSndSeq, buf, headerLen, payloadLen))
+                }
 
-            val totalLen = buf.writerIndex()
+                val totalLen = buf.writerIndex()
 
-            if (debugMode) {
-                pkt.logPacket(opcode)
-            }
+                if (debugMode) {
+                    pkt.logPacket(opcode)
+                }
 
-            // 把writerIndex設在0 來寫入header
-            buf.writerIndex(0)
+                // 把writerIndex設在0 來寫入header
+                buf.writerIndex(0)
 
-            val headerCode = (m_nHeaderType + m_nHeaderCodeModifier) xor (m_nHeaderCodeSndBase + m_nPacketSndSeq)
-            // 真實 EN banner 無 headerCode, 首位元組固定 0x00
-            buf.writeByte(if (m_nCipherDegree == 0 && isEN) 0 else headerCode)
+                val headerCode = (m_nHeaderType + m_nHeaderCodeModifier) xor (m_nHeaderCodeSndBase + m_nPacketSndSeq)
+                // 真實 EN banner 無 headerCode, 首位元組固定 0x00
+                buf.writeByte(if (m_nCipherDegree == 0 && isEN) 0 else headerCode)
 
-            if (m_nCipherDegree in 1..3) {
-                // 寫入長度
-                if (m_nCipherDegree == 3) {
-                    buf.writeByte(0)
-                    Encode4(payloadLen)
-                } else {
+                if (m_nCipherDegree in 1..3) {
+                    // 寫入長度
+                    if (m_nCipherDegree == 3) {
+                        buf.writeByte(0)
+                        Encode4(payloadLen)
+                    } else {
+                        Encode2(payloadLen)
+                    }
+                    // 加密
+                    buf.simpleStreamEncrypt3(m_nPacketSndSeq, headerLen, payloadLen)
+                } else { // 握手
                     Encode2(payloadLen)
+                    m_nCipherDegree = m_nCipherDegreeInit
                 }
-                // 加密
-                buf.simpleStreamEncrypt3(m_nPacketSndSeq, headerLen, payloadLen)
-            } else { // 握手
-                Encode2(payloadLen)
-                m_nCipherDegree = m_nCipherDegreeInit
+
+                // 將writerIndex還原
+                buf.writerIndex(totalLen)
             }
 
-            // 將writerIndex還原
-            buf.writerIndex(totalLen)
+            m_nPacketSndSeq += m_nPacketSndSeqDelta
+        } finally {
+            NetConfig.exitContext()
         }
-
-        m_nPacketSndSeq += m_nPacketSndSeqDelta
     }
 
     /*    override fun encode(ctx: ChannelHandlerContext, pkt: PKT, out: MutableList<Any>) {

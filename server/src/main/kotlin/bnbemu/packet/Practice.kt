@@ -35,7 +35,7 @@ fun Unk113() = PKT {
 @JvmOverloads fun PracticeRoomInfo(bombStyle: Int = 0, user: User? = null, slot: Int = 0) = PKT { encodePracticePlayerInfo(EN_OP100_ROOM, bombStyle, user,slot) }
 @JvmOverloads fun PracticeStartInfo(bombStyle: Int = 0, user: User? = null, slot: Int = 0) = PKT { encodePracticePlayerInfo(EN_OP100_START, bombStyle, user,slot) }
 
-private fun SendPacketBase.encodePracticePlayerInfo(blob: ByteArray, bombStyle: Int, user: User?, slot: Int) {
+internal fun SendPacketBase.encodePracticePlayerInfo(blob: ByteArray, bombStyle: Int, user: User?, slot: Int) {
     // op100 includes the room member's identity. A captured ID/name prevents a
     // renamed account from identifying itself as chief, disabling room controls.
     val marker = byteArrayOf(0xa5.toByte(), 0x6d) + SESSION_STRING
@@ -77,11 +77,11 @@ private fun SendPacketBase.encodePracticePlayerInfo(blob: ByteArray, bombStyle: 
         EncodeBuffer(blob.copyOfRange(infoStart + 13, accessoryOffset))
     }
     // PSlotAccessory::Read (0x44A856), followed by CSessionContext setters
-    // 0x687455 and 0x687217. Preserve the two-byte prefix and trailing flags.
+    // 0x687455, 0x68747F (motionBlurStyle), 0x686118 (motionBlurPlus), and 0x687217.
     EncodeBuffer(blob.copyOfRange(accessoryOffset, accessoryOffset + 2))
     val definitions = bnbemu.server.localAppearanceDefinitions(user)
     encodeAppearanceDefinitions(definitions)
-    EncodeBuffer(blob.copyOfRange(blob.size - 7, blob.size - 5))
+    encodeMotionBlurDefinitions(definitions)
     Encode4(bombStyle)
     encodeAvatarDefinitions(definitions)
 }
@@ -140,6 +140,24 @@ internal fun SendPacketBase.encodeAppearanceDefinitions(definitions: List<ItemDe
     val characterDecorations = definitions.filter { it.category == 12 && it.skinId in -2..7 && it.targetCharId in 0..8 && it.param >= 0 }
     Encode1(characterDecorations.size)
     characterDecorations.forEach { Encode4(it.skinId); Encode4(it.targetCharId); Encode4(it.param) }
+}
+
+// PSlotAccessory::Read (0x44A9D2 / 0x44A9E1) reads motionBlurStyle (0xFF=off,
+// 2=Rainbow, 4=Aurora, 5=Sakura) and motionBlurPlus (0/1). CA.exe applies these
+// right after the characterDecorations loop (0x535EFA / 0x63C953), so hardcoding
+// (0xFF, 0) from the captured blob would overwrite CBomber+0x27A8 back to disabled.
+internal fun SendPacketBase.encodeMotionBlurDefinitions(definitions: List<ItemDefEntry>) {
+    var style = 0xFF
+    var plus = 0
+    for (def in definitions) {
+        if (def.category == 12 && def.targetCharId == 8 && def.param >= 0) {
+            if (def.param == 1) plus = 1
+            else if (def.param <= 0xFE) style = def.param
+        }
+    }
+    if (plus != 0 && style == 0xFF) style = 0
+    Encode1(style)
+    Encode1(plus)
 }
 
 // PSlotAccessory::Read (0x44A9FB) reads the avatar array AFTER the bomb

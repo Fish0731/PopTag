@@ -30,7 +30,8 @@ val isTW = locale == Region.TW
 val isCN = locale == Region.CN
 val isEN = locale == Region.EN
 
-val debugMode = true
+val debugMode: Boolean
+    get() = NetConfig.debug
 val showDecValue = false
 
 inline val tickCount
