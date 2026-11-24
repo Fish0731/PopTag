@@ -1197,6 +1197,7 @@ object Room {
     }
 
     fun reset() {
+        slots.forEach { it.suspendedForMapCapacity = false }
         matchBombers = emptyMap()
         pendingWalletNotices.clear()
         aiBattleDeadlineNanos = null

@@ -4,6 +4,7 @@ import sys,struct,json,hashlib
 sys.path.insert(0,r'D:\GAME\work\PopTag-monster-port')
 from audit_shop324_compat import CN057,load_index,read_asset
 from fix_map_object_indices import objects,decrypt,encrypt,crc
+from repair_dungeon_spawn_tables import tile_offset
 from rewrite_fx_index import write_index
 ROOT=Path(__file__).resolve().parent;OUT=ROOT/'port-audit/dungeon057'
 DATA=ROOT/'server/src/main/resources/data'
@@ -17,14 +18,16 @@ def main():
     for num in range(1,23):
         board=f'Tomb{num:02d}';name='Map/'+board;entry=source[name]
         plain=decrypt(read_asset(CN057,entry,'fx'),entry['flags']);converted=bytearray(plain)
-        width,height=struct.unpack_from('<II',plain,12);assert (width,height)==(15,13)
+        width,height,capacity=struct.unpack_from('<III',plain,12);assert (width,height)==(15,13)
+        grid=tile_offset(plain,capacity);end=grid+width*height*8
+        assert end<=len(plain)
         deps=set()
-        for off in range(0x70,0x70+width*height*8,4):
+        for off in range(grid,end,4):
             model=struct.unpack_from('<I',plain,off)[0]
             if model==0xffffffff:continue
             dep=names[model];assert dep in dest,(board,dep);deps.add(dep)
             struct.pack_into('<I',converted,off,dest[dep])
-        assert converted[:0x70]==plain[:0x70] and converted[0x688:]==plain[0x688:]
+        assert converted[:grid]==plain[:grid] and converted[end:]==plain[end:]
         converted+=bytes((-len(converted))%4);payload=encrypt(converted,entry['flags'])
         assert decrypt(payload,entry['flags'])==converted
         idx[name]={**entry,'offset':size+len(append),'size':len(payload),'key':crc(converted,entry['flags'])};append+=payload

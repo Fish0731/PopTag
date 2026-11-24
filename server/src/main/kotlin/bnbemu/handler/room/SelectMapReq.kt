@@ -10,6 +10,7 @@ import bnbemu.packet.PracticeSlotReady
 import bnbemu.packet.room.SelectMap
 import bnbemu.server.FLAG_CLOSED
 import bnbemu.server.Room
+import bnbemu.server.bomber
 import bnbemu.server.state
 
 internal fun localMapSeatLimit(mapId: Int): Int = when {
@@ -18,22 +19,34 @@ internal fun localMapSeatLimit(mapId: Int): Int = when {
 }
 
 private fun localLegacyMapSeatLimit(name: String?): Int = when (name) {
-    "Cemetery19", "Tomb21" -> 4
     "Tomb09", "Tomb12", "Tomb14", "Tomb16" -> 6
     else -> 8
 }
 
 internal fun fitLocalMapNpcSeats(mapId: Int) {
     val limit = localMapSeatLimit(mapId)
-    if (limit == Room.slots.size) return
     val humanCount = Room.slots.count { it.user != null }
     val aiSeats = Room.slots.indices.filter { Room.slots[it].isAI && Room.slots[it].user == null }
-    for (index in aiSeats.drop((limit - humanCount).coerceAtLeast(0))) {
+    val available = (limit - humanCount).coerceAtLeast(0)
+    for (index in aiSeats.drop(available)) {
         Room.slots[index].apply {
+            suspendedForMapCapacity = Room.localGameMode == 16
             isAI = false
             state = FLAG_CLOSED
         }
         Room.BC(PracticeSlotReady(index, 1), PracticeSlot103(index, false, 0, 0))
+    }
+    for (index in Room.slots.indices.filter {
+        val slot = Room.slots[it]
+        slot.suspendedForMapCapacity && slot.user == null && !slot.isAI
+    }.take((available - aiSeats.size).coerceAtLeast(0))) {
+        val slot = Room.slots[index]
+        slot.suspendedForMapCapacity = false
+        slot.isAI = true
+        slot.state = 0
+        Room.BC(PracticeSlotReady(index, 2), bnbemu.packet.PracticeSlot114(index, slot.bomber.toInt()),
+            bnbemu.packet.PracticeSetPlayer(index, slot.bomber.toInt()),
+            PracticeSlot103(index, true, 0, slot.npcDifficulty))
     }
 }
 

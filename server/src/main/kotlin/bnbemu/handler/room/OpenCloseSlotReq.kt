@@ -63,6 +63,7 @@ val OpenCloseSlotReq = PKTHandler { c ->
 
         val slot = Room.slots.getOrNull(slotIdx)
         if (slot != null) {
+            slot.suspendedForMapCapacity = false
             if (isClosing) {
                 // 踢出电脑敌人 / 关闭槽位 (FLAG_CLOSED = 1)
                 slot.isAI = false

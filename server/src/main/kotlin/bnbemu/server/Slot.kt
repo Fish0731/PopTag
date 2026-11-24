@@ -33,7 +33,8 @@ class Slot(
     // 本局生命状态：开局由 Room.resetMatchState 按"座位上有人"重置，
     // C→S op 154 action=5 时 ALIVE -> DEAD。它同时是阵亡上报的去重位与胜负判定依据。
     // 默认 OUT_OF_MATCH：没进过任何一局的槽位不参战。
-    var matchState: SlotMatchState = SlotMatchState.OUT_OF_MATCH
+    var matchState: SlotMatchState = SlotMatchState.OUT_OF_MATCH,
+    var suspendedForMapCapacity: Boolean = false
 )
 
 var Slot.state: Number

@@ -2,6 +2,7 @@ package bnbemu.netty
 
 import bnbemu.data.FxdynMapInfo
 import bnbemu.handler.room.launchLocalMatch
+import bnbemu.handler.room.localMapSeatLimit
 import bnbemu.handler.room.mapIdTable
 import bnbemu.server.LocalMapBounds
 import bnbemu.server.Room
@@ -33,7 +34,7 @@ class DungeonMapsTest {
         assertEquals("none",group.stage)
         assertEquals(1,group.subtype)
     }
-    @Test fun cemetery19UsesFourValidSpawnsAndResolvesRandomOnlyInTheMatch() {
+    @Test fun cemetery19KeepsFourNpcsAndResolvesRandomOnlyInTheMatch() {
         OpcodeManager.recvOps
         val client = ClientSocket()
         val channel = EmbeddedChannel(client)
@@ -46,6 +47,8 @@ class DungeonMapsTest {
             Room.slots[0].meta[1] = 13
             (4..7).forEach { Room.slots[it].isAI = true }
             val board = mapIdTable.entries.single { it.value.name == "Cemetery19" }
+            bnbemu.handler.room.fitLocalMapNpcSeats(board.key)
+            assertTrue(Room.slots[7].isAI)
             launchLocalMatch(client, board.key, board.value.themeId)
             val packets = generateSequence { channel.readOutbound<PKT>() }.toList()
             val start = packets.single { OpcodeManager.getSendOp(it::class.java) == 112 }
@@ -55,8 +58,8 @@ class DungeonMapsTest {
                 body.skipBytes(6)
                 body.skipBytes(body.Decode2)
                 body.skipBytes(6)
-                assertEquals(4, body.Decode1)
-                val roster = (0 until 4).map {
+                assertEquals(5, body.Decode1)
+                val roster = (0 until 5).map {
                     val slot = body.Decode1
                     val spawn = body.Decode1
                     val bomber = body.Decode1
@@ -64,11 +67,16 @@ class DungeonMapsTest {
                     if (slot == 0) assertTrue(bomber in 0..7)
                     slot to spawn
                 }
-                assertEquals(listOf(0, 4, 5, 6), roster.map { it.first })
-                assertEquals((0..3).toSet(), roster.map { it.second }.toSet())
+                assertEquals(listOf(0, 4, 5, 6, 7), roster.map { it.first })
+                assertEquals(listOf(2, 3, 4, 5, 7), roster.map { it.second })
                 assertEquals(13, Room.slots[0].meta[1].toInt())
-                assertFalse(Room.slots[7].isAI)
+                assertTrue(Room.slots[7].isAI)
             } finally { body.release() }
+            for ((id, map) in mapIdTable.filterValues { it.name.matches(Regex("Tomb[0-9]{2}")) }) {
+                assertTrue(localMapSeatLimit(id) >= 6, map.name)
+                bnbemu.handler.room.fitLocalMapNpcSeats(id)
+                assertTrue(Room.slots[7].isAI, map.name)
+            }
         } finally {
             Room.reset()
             Room.localGameMode = previousMode
