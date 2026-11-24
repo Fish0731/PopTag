@@ -56,7 +56,10 @@ class GameOverTest {
                 body.skipBytes(9)
                 assertEquals(1, body.Decode1)
                 body.Decode4
-                assertEquals(1, body.Decode1, "Timeout must use the native draw enum")
+                assertEquals(3, body.Decode1, "Timeout must use the native draw enum")
+                body.skipBytes(58)
+                assertEquals(2, body.Decode1, "The opponent is an AI slot")
+                assertEquals(3, body.Decode1, "The AI row must also use the draw enum")
             } finally { body.release() }
             assertEquals(bnbemu.server.LocalEconomy.startingGold + 100_000,user.lucci)
             assertEquals(25000,bnbemu.server.LocalShop.store.account(user.accountKey).totalExperience)
@@ -72,7 +75,7 @@ class GameOverTest {
                 pvp.skipBytes(1)
                 assertEquals(255, pvp.Decode1)
                 pvp.skipBytes(14)
-                assertEquals(1, pvp.Decode1)
+                assertEquals(3, pvp.Decode1)
             } finally { pvp.release() }
             ch.outboundMessages().clear()
             Room.localGameMode = 15
@@ -1409,7 +1412,7 @@ class GameOverTest {
             val body = bodyOf(result)
             assertEquals(0, dec1(body[0]), "Death must not show mission clear")
             assertEquals(0, dec1(body[3]), "Death must not show perfect victory")
-            assertEquals(2, dec1(body[16]), "Native loss enum is 2, not draw enum 1")
+            assertEquals(2, dec1(body[16]), "Native loss enum is 2")
             val win = bodyOf(GameResult(winnerTeam = 0))
             assertEquals(0, dec1(win[3]))
             assertEquals(0, dec1(win[16]))
@@ -1418,7 +1421,7 @@ class GameOverTest {
             assertEquals(0, dec1(battle[3]), "Do not alter battle header")
             assertEquals(2, dec1(battle[16]), "Battle defeat must use the native loss enum too")
             val battleWin = bodyOf(GameResult(winnerTeam = 0))
-            assertEquals(0, dec1(battleWin[16]), "Battle victory must not use draw enum 1")
+            assertEquals(0, dec1(battleWin[16]), "Native win enum is 0")
         } finally { Room.localGameMode = mode }
     }
 

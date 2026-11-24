@@ -5,6 +5,10 @@ import bnbemu.server.Room
 import bnbemu.server.LocalEconomy
 import bnbemu.server.color
 
+private const val RESULT_WIN = 0
+private const val RESULT_LOSS = 2
+private const val RESULT_DRAW = 3
+
 // S→C GameResult (Opcode 150 in EN / CA.exe 0x00559854)
 // 结构 (约 119 字节):
 //   1. Header (11 字节, CA.exe 0x0053E09C):
@@ -56,11 +60,10 @@ fun GameResult(
             val before = LocalEconomy.progress((LocalEconomy.totalExperience(user.level, user.exp) - earnedExp.coerceAtLeast(0)).coerceAtLeast(0))
             Encode1(1) // slotType = 1 (Human)
             Encode4(0) // score / unk
-            // Both battle and stage-clear rows use the same native result enum.
-            // 0=win, 1=draw, 2=loss; native 0x53F534 -> 0x53358E ->
-            // 0x559239 (CGOLoseGlyph). Verified with isolated native execution.
+            // The result display dispatches 0 to win, 1 to perfect win,
+            // 2 to loss and 3 to the draw glyph.
             val won=if(Room.localGameMode==0) slot.color.toInt()==winnerTeam else winnerTeam==0
-            Encode1(if (draw) 1 else if (won) 0 else 2)
+            Encode1(if (draw) RESULT_DRAW else if (won) RESULT_WIN else RESULT_LOSS)
             Encode1(0)
             Encode1(0)
             Encode1(0)
@@ -92,7 +95,7 @@ fun GameResult(
             Encode1(0)
         } else if (isAI) {
             Encode1(2) // slotType = 2 (AI Bot)
-            Encode1(if (draw) 1 else if (winnerTeam == 0) 2 else 0)
+            Encode1(if (draw) RESULT_DRAW else if (winnerTeam == 0) RESULT_LOSS else RESULT_WIN)
             Encode1(0)
             Encode1(0)
             Encode2(if (Room.localGameMode == 16) bnbemu.server.npcDifficultyBadgeLevel(slot!!.npcDifficulty) else slot!!.AILevel)
