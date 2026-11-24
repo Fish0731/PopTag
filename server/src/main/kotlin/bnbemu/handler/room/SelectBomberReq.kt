@@ -3,6 +3,7 @@ package bnbemu.handler.room
 import bnbemu.netty.Decode1
 import bnbemu.netty.PKTHandler
 import bnbemu.packet.room.SlotBomber
+import bnbemu.server.RANDOM_BOMBER
 import bnbemu.server.Room
 import bnbemu.server.bomber
 
@@ -30,19 +31,18 @@ import bnbemu.server.bomber
 // 与 TW 的差异: TW 表里 SelectBomberReq = op 99, 但真实 EN 客户端发的是 op 87;
 // op 99 (0x61201C) 在 EN 里另有用途, 故 EN 分支单独绑定。
 val SelectBomberReq = PKTHandler { c ->
+    if (readableBytes() != 2) return@PKTHandler
     val slotIdx = Decode1
     val bomberIdx = Decode1
 
-    if (bomberIdx !in 0..7 && bomberIdx != 10) return@PKTHandler
-    val effectiveBomber = bomberIdx
     val owner=Room.slots.getOrNull(slotIdx)?.user
     if(owner!=null && owner.c!==c) return@PKTHandler
     val user=owner ?: c.users.getOrNull(slotIdx) ?: return@PKTHandler
-    user.selectedBomber = effectiveBomber
+    if (bomberIdx !in 0..7 && bomberIdx != 10 && bomberIdx != RANDOM_BOMBER) return@PKTHandler
+    if (bomberIdx != RANDOM_BOMBER) user.selectedBomber = bomberIdx
+    Room.slots.getOrNull(slotIdx)?.bomber = bomberIdx
 
-    Room.slots.getOrNull(slotIdx)?.bomber = effectiveBomber
-
-    val pkt = SlotBomber(slotIdx, effectiveBomber)
+    val pkt = SlotBomber(slotIdx, bomberIdx)
     if (Room.uniqueClients.any()) {
         Room.BC(pkt)
     } else {

@@ -15,6 +15,7 @@ import kotlin.random.Random
 
 // 之後改用class
 object Room {
+    internal var matchBombers: Map<Int, Int> = emptyMap()
     private val executor: EventLoop = workerGroup.next()
     private var tickFuture: ScheduledFuture<*>? = null
     private val roomGeneration = AtomicLong()
@@ -26,6 +27,16 @@ object Room {
     internal var monsterTimeLimitMs = bnbemu.packet.MONSTER_TIME_LIMIT_SEC * 1000L
     @Volatile private var aiBattleDeadlineNanos: Long? = null
     internal var aiBattleTimeLimitMs = bnbemu.packet.AI_BATTLE_TIME_LIMIT_SEC * 1000L
+    private val mapGhostSpawnAt = AtomicLong()
+    private val mapGhostCells by lazy {
+        requireNotNull(Room::class.java.getResourceAsStream("/data/haunted-map-spawns.tsv"))
+            .bufferedReader().useLines { lines ->
+                lines.associate { line ->
+                    val (name, column, row) = line.split('\t')
+                    name to (column.toInt() to row.toInt())
+                }
+            }
+    }
     private var monsterControlGranted = false
     private val releasedMonsterObjects = mutableSetOf<Int>()
     private val frozenMonsterObjects = mutableSetOf<Int>()
@@ -120,8 +131,9 @@ object Room {
     fun refreshWaitingAppearance(user: User): Boolean {
         val index = slots.indexOfFirst { it.user === user }
         if (matchRunning || index < 0) return false
+        val bomber = if (slots[index].bomber.toInt() == RANDOM_BOMBER) RANDOM_BOMBER else user.selectedBomber
         BC(bnbemu.packet.PracticeRoomInfo(localBombStyle(user), user,slot=index),
-            bnbemu.packet.PracticeSetPlayer(index, user.selectedBomber))
+            bnbemu.packet.PracticeSetPlayer(index, bomber))
         return true
     }
 
@@ -142,6 +154,7 @@ object Room {
         // 必须在这里做, 否则上一局阵亡的槽位会带着 DEAD 进入下一局,
         // 导致开局第一次死亡上报被当成重复上报吞掉、或开局即判定全灭。
         resetMatchState()
+        mapGhostSpawnAt.set(0)
         matchRunning = true
         monsterDeadlineNanos = null
         aiBattleDeadlineNanos = null
@@ -190,6 +203,7 @@ object Room {
         val now = System.currentTimeMillis()
         checkMonsterTimeout()
         checkAiBattleTimeout()
+        checkMapGhostSpawn()
         val stateChanged = mutableListOf<Bomb>()
 
         synchronized(bombs) {
@@ -223,7 +237,12 @@ object Room {
     // Start the countdown only after the actual player has loaded the board.
     // Repeated loading acknowledgements must never extend the round.
     fun onBoardReady() {
-        if (matchRunning && localGameMode == 16 && aiBattleDeadlineNanos == null && !gameOverSent) {
+        if (isEN && matchRunning && !gameOverSent && localGameMode != 14 &&
+            bnbemu.handler.room.mapIdTable[activeMapId]?.name in mapGhostCells) {
+            mapGhostSpawnAt.compareAndSet(0, System.nanoTime() + TimeUnit.SECONDS.toNanos(25))
+        }
+        if (matchRunning && (localGameMode == 16 || localGameMode == 0) &&
+            aiBattleDeadlineNanos == null && !gameOverSent) {
             aiBattleDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(aiBattleTimeLimitMs)
         }
         if (monsterBoardLoadPending) {
@@ -243,6 +262,37 @@ object Room {
             // Nonexistent ids are safe no-ops; capacity is the native registry limit.
             repeat(MONSTER_OBJECT_CAPACITY) { BC(MonsterControl(it, controller)) }
             println("[Monster] Granted local control slot=$controller capacity=$MONSTER_OBJECT_CAPACITY")
+        }
+    }
+
+    internal fun checkMapGhostSpawn(nowNanos: Long = System.nanoTime()) {
+        val deadline = mapGhostSpawnAt.get()
+        if (deadline <= 0 || nowNanos < deadline || !matchRunning || gameOverSent) return
+        val name = bnbemu.handler.room.mapIdTable[activeMapId]?.name ?: return
+        val (column, row) = mapGhostCells[name] ?: return
+        val controller = slots.indexOfFirst { it.user != null && it.isAlive }
+        if (controller < 0 || !mapGhostSpawnAt.compareAndSet(deadline, -1)) return
+        BC(SpawnMapGhost(0, controller, column, row))
+    }
+
+    internal fun onUseDrill(client: ClientSocket, row: Int, column: Int, slot: Int, direction: Int) {
+        if (!matchRunning || gameOverSent || direction !in 0..3) return
+        val player = slots.getOrNull(slot) ?: return
+        if (player.user?.c !== client || !player.isAlive) return
+        val name = bnbemu.handler.room.mapIdTable[activeMapId]?.name ?: return
+        if (LocalMapBounds.forBoard(name)?.contains(column, row) != true) return
+        BC(UseDrillResult(row, column, slot, direction))
+    }
+
+    internal fun recordLocalSupplyUse(client: ClientSocket, inventory: Int, itemId: Int, previousQuantity: Int) {
+        if (!matchRunning || itemId !in bnbemu.packet.ShopCatalog.battleSupplyItemIds) return
+        if (localGameMode == 15 && itemId == 10000) return
+        val player = client.users.getOrNull(inventory) ?: return
+        if (slots.none { it.user === player }) return
+        try {
+            LocalShop.store.consumeEquipped(player.accountKey, itemId, previousQuantity)
+        } catch (e: java.io.IOException) {
+            System.err.println("[LocalSupplyUse] Unable to save item $itemId: ${e.javaClass.simpleName}")
         }
     }
 
@@ -582,6 +632,7 @@ object Room {
         defeatedMonsterObjects.add(objectId)
         BC(MonsterStageEvent(objectId, 4))
         println("[Monster] Boss popped id=$objectId slot=$playerSlot")
+        if (loadedMonsterStage()?.name?.startsWith("MonUnlimited") == true) checkMonsterStageClear()
     }
 
     fun onMonsterDamage(objectId: Int, damage: Int, playerSlot: Int) {
@@ -627,7 +678,8 @@ object Room {
         if (!matchRunning || localGameMode != 14 || gameOverSent || monsterTransitionPending) return
         val stage = loadedMonsterStage() ?: return
         if (monsterStageObjectives.isEmpty() || !monsterStageObjectives.all {
-                it in defeatedMonsterObjects && (it in releasedMonsterObjects || spawnedMonsterObjects[it]?.settlesOnDefeat == true)
+                it in defeatedMonsterObjects && (stage.name.startsWith("MonUnlimited") ||
+                    it in releasedMonsterObjects || spawnedMonsterObjects[it]?.settlesOnDefeat == true)
             }) return
         val next = stage.next?.let { name ->
             bnbemu.data.FxdynMapInfo.gameRecords.filter { it.flag == 0 }.withIndex().firstOrNull { it.value.name == name }
@@ -646,6 +698,10 @@ object Room {
         BC(InitGameResult(mode = 0, mapId = 0), GameResult(winnerTeam = 0, delayFrames = 60, missionClear = false, rewards = rewards))
         executor.schedule({
             if (roomGeneration.get() != generation || !monsterTransitionPending) return@schedule
+            if (stage.name.startsWith("MonUnlimited")) {
+                rebuildCampaignBoard(next.index, next.value.sortOrder, generation)
+                return@schedule
+            }
             startGame(next.index)
             monsterBoardLoadPending = true
             monsterBombContext = 2
@@ -653,10 +709,33 @@ object Room {
         }, 5000, TimeUnit.MILLISECONDS)
     }
 
+    private fun rebuildCampaignBoard(nextMapId: Int, nextThemeId: Int, generation: Long) {
+        val client = uniqueClients.firstOrNull() ?: return
+        BC(ReturnToRoom())
+        executor.schedule({
+            if (roomGeneration.get() != generation || !monsterTransitionPending || !client.ch.isActive) return@schedule
+            sendLocalRoomSnapshot(client, includeInventory = false)
+            executor.schedule({
+                if (roomGeneration.get() == generation && monsterTransitionPending && client.ch.isActive) {
+                    bnbemu.handler.room.launchLocalMatch(client, nextMapId, nextThemeId, replenish = false)
+                }
+            }, 500, TimeUnit.MILLISECONDS)
+        }, 500, TimeUnit.MILLISECONDS)
+    }
+
     /** Only called by the explicitly armed, local one-shot crash reproduction. */
     internal fun advanceCrashProbeBoards() {
         val stage = loadedMonsterStage() ?: return
-        if (stage.name !in setOf("MonPen07", "MonPen08") || localGameMode != 14 || !matchRunning || !monsterControlGranted) return
+        if (localGameMode != 14 || !matchRunning || !monsterControlGranted) return
+        if (stage.name.startsWith("MonUnlimited")) {
+            for (id in stage.objectives) {
+                if (id in defeatedMonsterObjects) continue
+                onMonsterDamage(id, stage.monsters.getValue(id).hp, 0)
+                onMonsterFinish(id, 0)
+            }
+            return
+        }
+        if (stage.name !in setOf("MonPen07", "MonPen08")) return
         val targets = (stage.monsters.values.filter { it.initial } + spawnedMonsterObjects.values)
             .filter { it.id !in defeatedMonsterObjects && it.id !in releasedMonsterObjects }
             .filterNot { stage.name == "MonPen08" && LocalMonsterScriptDamage.permits(stage.name, it, 1) }
@@ -675,11 +754,10 @@ object Room {
 
     internal fun checkAiBattleTimeout(nowNanos: Long = System.nanoTime()) {
         val deadline = aiBattleDeadlineNanos ?: return
-        if (!matchRunning || localGameMode != 16 || gameOverSent || nowNanos < deadline) return
+        if (!matchRunning || (localGameMode != 16 && localGameMode != 0) ||
+            gameOverSent || nowNanos < deadline) return
         aiBattleDeadlineNanos = null
-        // The challenge was not completed in time. Use the existing verified
-        // failure result / reward / return-to-room flow, never an extra death.
-        emitMatchResult(false, slots.indexOfFirst { it.isAI }.takeIf { it >= 0 } ?: 1, "激战模式时间耗尽")
+        emitMatchResult(false, null, "对局时间耗尽")
     }
 
     // 客户端上报槽位事件 (Opcode 149) 时触发
@@ -809,7 +887,7 @@ object Room {
     //    服务端只是"不知道", 再来一条 159 会让死亡动作重播。
     fun onLastTeamStanding(slotId: Int) {
         if (slotId !in slots.indices) return
-        if (gameOverSent) return
+        if (gameOverSent || pvpDeathsPending) return
 
         // 单座位房 (1 人无 AI) 客户端从第一帧就会满足"只剩一队", 那不是胜负而是没对手;
         // 真正参战的房间至少要有两个座位 (练习房 = 1 真人 + 1..7 AI)
@@ -852,7 +930,18 @@ object Room {
         if(localGameMode==0) {
             val initialTeams=humanIdx.map {slots[it].color.toInt()}.distinct()
             val remainingTeams=humanAlive.map {slots[it].color.toInt()}.distinct()
-            if(initialTeams.size>=2 && remainingTeams.size==1) emitMatchResult(true,humanAlive.first())
+            if (initialTeams.size < 2 || remainingTeams.size > 1 || pvpDeathsPending) return
+            pvpDeathsPending = true
+            val generation = roomGeneration.get()
+            // The same blast can produce consecutive death reports for both teams.
+            executor.schedule({
+                if (roomGeneration.get() != generation) return@schedule
+                pvpDeathsPending = false
+                val survivors = slots.withIndex().filter { (_, slot) -> slot.user != null && slot.isAlive }
+                if (survivors.map { it.value.color }.distinct().size > 1) return@schedule
+                val survivor = survivors.firstOrNull()?.index
+                emitMatchResult(survivor != null, survivor)
+            }, 200, TimeUnit.MILLISECONDS)
             return
         }
 
@@ -912,22 +1001,24 @@ object Room {
         return rewards
     }
 
-    private fun emitMatchResult(humanWin: Boolean, winnerSlot: Int, detail: String = "") {
+    @Synchronized private fun emitMatchResult(humanWin: Boolean, winnerSlot: Int?, detail: String = "") {
         if (gameOverSent) return
         gameOverSent = true
+        val draw = winnerSlot == null
         println(
-            "[Room] 对局结束: " + (if (humanWin) "玩家胜" else "AI 胜") +
+            "[Room] 对局结束: " + (if (draw) "平局" else if (humanWin) "玩家胜" else "AI 胜") +
                 " | winnerSlot=$winnerSlot" + (if (detail.isEmpty()) "" else " | $detail")
         )
 
         val generation = roomGeneration.get()
         executor.schedule({
             if (roomGeneration.get() != generation || !gameOverSent) return@schedule
-            val winningTeam=if(localGameMode==0) slots[winnerSlot].color.toInt() else null
+            val winningTeam = if (localGameMode == 0) winnerSlot?.let { slots[it].color.toInt() } else null
             val rewards = settleEconomy(humanWin, loadedMonsterStage()?.monsters?.values?.any { it.boss } == true,winningTeam)
             BC(
                 InitGameResult(mode = 0, mapId = 0),
-                GameResult(winnerTeam = winningTeam ?: if (humanWin) 0 else 1, delayFrames = 60, rewards = rewards)
+                GameResult(winnerTeam = if (draw) -1 else winningTeam ?: if (humanWin) 0 else 1,
+                    delayFrames = 60, rewards = rewards)
             )
             // 结算后停掉对局主循环 (水泡倒计时), 与客户端离开棋盘同步
             endGame()
@@ -982,6 +1073,7 @@ object Room {
 
     // 是否已经下发过本局结算 (防止重复结算)
     internal var gameOverSent = false
+    @Volatile private var pvpDeathsPending = false
 
     fun addBomb(
         slotId: Int,
@@ -1017,6 +1109,21 @@ object Room {
 
     fun getBomb(bombId: Int): Bomb? {
         return synchronized(bombs) {bombs.find { it.id == bombId }}
+    }
+
+    internal fun onDartHit(client: ClientSocket, bombId: Int, row: Int, column: Int, delayMs: Int) {
+        if (row !in 0..14 || column !in 0..14 || delayMs !in 0..1000) return
+        val generation = roomGeneration.get()
+        executor.execute {
+            if (roomGeneration.get() != generation || !matchRunning || gameOverSent ||
+                slots.none { it.user?.c === client && it.isAlive }) return@execute
+            synchronized(bombs) {
+                val bomb = bombs.firstOrNull { it.id == bombId && !it.isMoving && it.state != 0 } ?: return@synchronized
+                if (bomb.gridX != row || bomb.gridY != column) return@synchronized
+                val impactTime = System.currentTimeMillis() + delayMs
+                bomb.expireAt = minOf(bomb.expireAt, impactTime)
+            }
+        }
     }
 
     fun onBombKickThrow(actionSlot: Int, bombId: Int, fromRow: Int, fromColumn: Int, targetRow: Int, targetColumn: Int, duration: Int) {
@@ -1059,6 +1166,7 @@ object Room {
     fun endGame() {
         aiBattleDeadlineNanos = null
         matchRunning = false
+        mapGhostSpawnAt.set(0)
         monsterDeadlineNanos = null
         tickFuture?.cancel(false)
         bombs.clear()
@@ -1084,10 +1192,12 @@ object Room {
      */
     fun resetMatchState() {
         gameOverSent = false
+        pvpDeathsPending = false
         slots.forEach { it.matchState = if (it.hasSeat()) SlotMatchState.ALIVE else SlotMatchState.OUT_OF_MATCH }
     }
 
     fun reset() {
+        matchBombers = emptyMap()
         pendingWalletNotices.clear()
         aiBattleDeadlineNanos = null
         economyReceipt = ""
@@ -1095,6 +1205,7 @@ object Room {
         monsterBoardLoadPending = false
         monsterBoardStartSent = false
         matchRunning = false
+        mapGhostSpawnAt.set(0)
         monsterDeadlineNanos = null
         cancelPendingReturn()
         tickFuture?.cancel(false)

@@ -42,12 +42,12 @@ class LocalEconomyTest {
         store.purchase("a",ShopItemEntry(9,14,"spend",itemId=9,tail=ShopItemTail(price1=2995000)))
         val won = LocalEconomy.reward(16,true)
         val first = store.reward("a","match-1",won).account
-        assertEquals(105000,first.lucci);assertEquals(50000,first.totalExperience)
+        assertEquals(205000,first.lucci);assertEquals(50000,first.totalExperience)
         val reopened = LocalShopStore(directory)
         assertEquals(first,reopened.reward("a","match-1",won).account)
         assertEquals(44 to 550,LocalEconomy.progress(first.totalExperience))
         val purchased = reopened.purchase("a",ShopItemEntry(1,14,"test",itemId=2,tail=ShopItemTail(price1=1200))).account
-        assertEquals(103800,purchased.lucci);assertEquals(50000,purchased.totalExperience)
+        assertEquals(203800,purchased.lucci);assertEquals(50000,purchased.totalExperience)
         assertEquals(2 to 0,LocalEconomy.progress(100))
         assertEquals(3 to 0,LocalEconomy.progress(250))
         assertEquals(720 to 0,LocalEconomy.progress(Int.MAX_VALUE))
@@ -55,8 +55,9 @@ class LocalEconomyTest {
 
     @Test fun campaignRewardsAndPracticeAreSeparateAndWalletCapsSafely() {
         assertEquals(LocalEconomy.Reward(),LocalEconomy.reward(15,true,true))
-        assertEquals(LocalEconomy.Reward(100000,50000),LocalEconomy.reward(14,true,false))
+        assertEquals(LocalEconomy.Reward(200000,50000),LocalEconomy.reward(14,true,false))
         assertEquals(LocalEconomy.Reward(200000,100000),LocalEconomy.reward(14,true,true))
+        assertEquals(LocalEconomy.Reward(100000,25000),LocalEconomy.reward(14,false))
         val store=LocalShopStore(directory)
         val account=store.reward("a","large",LocalEconomy.Reward(Int.MAX_VALUE,Int.MAX_VALUE)).account
         assertEquals(LocalEconomy.walletLimit,account.lucci)

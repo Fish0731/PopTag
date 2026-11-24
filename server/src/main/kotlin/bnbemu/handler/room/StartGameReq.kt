@@ -10,7 +10,9 @@ import bnbemu.packet.PracticeBoard
 import bnbemu.packet.PracticeStartInfo
 import bnbemu.packet.PRACTICE_TIME_UNLIMITED_SEC
 import bnbemu.packet.room.GameStartMapInfo
+import bnbemu.server.RANDOM_BOMBER
 import bnbemu.server.Room
+import bnbemu.server.bomber
 import kotlin.random.Random
 
 // ============================================================================
@@ -74,15 +76,19 @@ fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, rep
     if (Room.localGameMode == 14 && replenish) {
         val name = mapIdTable[mapId]?.name.orEmpty()
         val parts = Regex("(MonPen|Monster|MonSeal|MonTurtle|MonRobot)([0-9]+)").matchEntire(name)
-        if (parts != null) {
-            val number = parts.groupValues[2].toInt()
-            val first = parts.groupValues[1] + (number - (number - 1) % 3).toString().padStart(2, '0')
-            val entry = mapIdTable.entries.firstOrNull { it.value.name == first }
-            if (entry != null && entry.key != mapId) {
-                Room.mapId = entry.key; Room.themeId = entry.value.themeId
-                launchLocalMatch(c, entry.key, entry.value.themeId, replenish = true)
-                return
+        val first = when {
+            name.startsWith("MonUnlimited") -> "MonUnlimited01"
+            parts != null -> {
+                val number = parts.groupValues[2].toInt()
+                parts.groupValues[1] + (number - (number - 1) % 3).toString().padStart(2, '0')
             }
+            else -> name
+        }
+        val entry = mapIdTable.entries.firstOrNull { it.value.name == first }
+        if (entry != null && entry.key != mapId) {
+            Room.mapId = entry.key; Room.themeId = entry.value.themeId
+            launchLocalMatch(c, entry.key, entry.value.themeId, replenish = true)
+            return
         }
     }
     val mapName = mapIdTable[mapId]?.name ?: FALLBACK_MAP_NAME
@@ -93,13 +99,26 @@ fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, rep
     // 「服務端按 6 個 AI 判勝負、客戶端卻照 op112 的 8 槽名冊生成 7 個 AI」的錯位。
     // 異常防護: 若房間槽位尚未初始化 (例如非練習房流程), 退回舊的 8 槽名冊,
     // 避免給客戶端發 slotCount=0 導致對局載入失敗。
+    val limit = localMapSeatLimit(mapId)
+    fitLocalMapNpcSeats(mapId)
     val activeSlots = Room.slots.indices.filter { i -> Room.slots[i].user != null || Room.slots[i].isAI }
-        .ifEmpty { (0..7).toList() }
+        .ifEmpty { (0 until limit).toList() }
+    if (activeSlots.size > limit) return
     println("StartGame. activeSlots=$activeSlots (AI=${activeSlots.count { Room.slots[it].isAI }})")
 
     if (replenish) c.users.firstOrNull()?.let { user ->
         bnbemu.server.needleStockPackets(c.users.size).forEach { c send it }   // 先建持有物, op198 热键穿戴的前置
         c send bnbemu.server.localUserInventory(user, practice = true, inGame = true)
+    }
+    val defaultSpawns = intArrayOf(2, 1, 6, 0, 3, 4, 5, 7)
+    val spawnPositions = defaultSpawns.copyOf()
+    if (limit < defaultSpawns.size) {
+        val usable = defaultSpawns.filter { it < limit }
+        activeSlots.forEachIndexed { index, slot -> spawnPositions[slot] = usable[index] }
+    }
+    if (replenish) {
+        Room.matchBombers = activeSlots.filter { Room.slots[it].bomber.toInt() == RANDOM_BOMBER }
+            .associateWith { Random.nextInt(8) }
     }
     c.send(
         PracticeAiLevel(),
@@ -110,6 +129,8 @@ fun launchLocalMatch(c: bnbemu.netty.ClientSocket, mapId: Int, themeId: Int, rep
             mapName = mapName,
             gameOptions = Room.localGameMode,
             activeSlots = activeSlots,
+            spawnPositions = spawnPositions,
+            resolvedBombers = Room.matchBombers,
             timeLimitSec = 0,
             useSelectedColors = Room.localGameMode == 15,
         ),

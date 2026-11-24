@@ -1,6 +1,7 @@
 package bnbemu.server
 
 import bnbemu.packet.ShopItemEntry
+import bnbemu.packet.ShopPackages
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -15,12 +16,18 @@ data class LocalShopAccount(
     val equipment: Map<Int, Map<Int, Int>> = emptyMap(), // inventory -> equipment slot -> item ID
     val totalExperience: Int = 0,
     val rewardReceipts: List<String> = emptyList()
-)
+) {
+    val bagCapacity: Int get() = LocalShopStore.CAPACITY +
+        if (items.containsKey(LocalShopStore.BAG_EXPANSION_ID)) 50 else 0
+}
 enum class PurchaseStatus { OK, INVALID_PRODUCT, INVALID_QUANTITY, UNSUPPORTED_CURRENCY, INSUFFICIENT_FUNDS, BAG_FULL }
 data class PurchaseOutcome(val status: PurchaseStatus, val account: LocalShopAccount, val itemId: Int = 0, val added: Int = 0)
 
 class LocalShopStore(private val directory: Path) {
-    companion object { const val CAPACITY = 128 }
+    companion object {
+        const val CAPACITY = 128
+        const val BAG_EXPANSION_ID = 20069
+    }
     private val accounts = mutableMapOf<String, LocalShopAccount>()
     private fun key(name: String) = name.lowercase(java.util.Locale.ROOT)
     private fun file(name: String): Path {
@@ -38,7 +45,6 @@ class LocalShopStore(private val directory: Path) {
                 val count = p.getProperty(it).toInt().also { n -> require(n in 1..65535) }
                 id to count
             }
-            require(items.size <= CAPACITY)
             val equipment = (0..1).associateWith { inventory ->
                 p.stringPropertyNames().filter { it.startsWith("equip.$inventory.") }.associate {
                     val slot = it.substringAfterLast('.').toInt().also { n -> require(n in 0..254) }
@@ -50,6 +56,7 @@ class LocalShopStore(private val directory: Path) {
             val value = LocalShopAccount(if (legacy) LocalEconomy.startingGold else money, items, equipment,
                 p.getProperty("experience", "0").toInt().also { require(it in 0..LocalEconomy.maxExperience) },
                 p.getProperty("reward.receipts", "").split(',').filter { it.isNotBlank() }.takeLast(128))
+            require(value.items.size <= value.bagCapacity)
             if (legacy) {
                 val backup = path.resolveSibling(path.fileName.toString() + ".pre-economy-v1.bak")
                 if (!Files.exists(backup)) Files.copy(path, backup)
@@ -87,13 +94,30 @@ class LocalShopStore(private val directory: Path) {
         if (currency != 0 || product.tail.price1 <= 0) return fail(PurchaseStatus.UNSUPPORTED_CURRENCY)
         val cost = product.tail.price1.toLong() * quantity
         if (cost > old.lucci) return fail(PurchaseStatus.INSUFFICIENT_FUNDS)
-        val added = product.count.toLong() * quantity
-        val current = old.items[product.itemId] ?: 0
-        if (added > 65535 || current + added > 65535) return fail(PurchaseStatus.INVALID_QUANTITY)
-        if (current == 0 && old.items.size >= CAPACITY) return fail(PurchaseStatus.BAG_FULL)
-        val next = old.copy(lucci = old.lucci - cost.toInt(), items = old.items + (product.itemId to (current + added.toInt())))
+        if (product.itemId == BAG_EXPANSION_ID &&
+            (quantity != 1 || BAG_EXPANSION_ID in old.items)) return fail(PurchaseStatus.INVALID_QUANTITY)
+        val components = ShopPackages.items(product.prodId)
+        val stock = components?.groupingBy { it }?.eachCount() ?: mapOf(product.itemId to product.count)
+        val updated = old.items.toMutableMap()
+        for ((item, count) in stock) {
+            val total = (updated[item] ?: 0) + count.toLong() * quantity
+            if (total > 65535) return fail(PurchaseStatus.INVALID_QUANTITY)
+            updated[item] = total.toInt()
+        }
+        val next = old.copy(lucci = old.lucci - cost.toInt(), items = updated)
+        if (updated.size > next.bagCapacity) return fail(PurchaseStatus.BAG_FULL)
+        val added = stock.values.sum().toLong() * quantity
         commit(name, next)
-        return PurchaseOutcome(PurchaseStatus.OK, next, product.itemId, added.toInt())
+        return PurchaseOutcome(PurchaseStatus.OK, next, if (components == null) product.itemId else 0, added.toInt())
+    }
+
+    @Synchronized fun discard(name: String, itemId: Int): Boolean {
+        val old = account(name)
+        if (itemId == BAG_EXPANSION_ID || itemId !in old.items) return false
+        val remaining = old.equipment.mapValues { (_, slots) -> slots.filterValues { it != itemId } }
+            .filterValues { it.isNotEmpty() }
+        commit(name, old.copy(items = old.items - itemId, equipment = remaining))
+        return true
     }
 
     @Synchronized fun reward(name: String, receipt: String, reward: LocalEconomy.Reward): PurchaseOutcome {
@@ -107,6 +131,20 @@ class LocalShopStore(private val directory: Path) {
             rewardReceipts = (old.rewardReceipts + receipt).takeLast(128))
         commit(name, next)
         return PurchaseOutcome(PurchaseStatus.OK, next, added = next.lucci - old.lucci)
+    }
+
+    @Synchronized fun consumeEquipped(name: String, itemId: Int, previousQuantity: Int): Boolean {
+        val old = account(name)
+        if (previousQuantity <= 0 || old.items[itemId] != previousQuantity ||
+            itemId !in old.equipment[0].orEmpty().values) return false
+        if (previousQuantity > 1) {
+            commit(name, old.copy(items = old.items + (itemId to previousQuantity - 1)))
+        } else {
+            val equipment = old.equipment.mapValues { (_, slots) -> slots.filterValues { it != itemId } }
+                .filterValues { it.isNotEmpty() }
+            commit(name, old.copy(items = old.items - itemId, equipment = equipment))
+        }
+        return true
     }
 
     @Synchronized fun changeEquipment(name: String, inventory: Int, changes: List<Pair<Int, Int>>): LocalShopAccount {

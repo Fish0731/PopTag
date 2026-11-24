@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test
  */
 class GameOverTest {
 
-    @Test fun aiBattleTimeoutStartsAfterReadySettlesOnceAndKeepsPracticeUntimed() {
+    @Test fun battleClockProducesOneDrawAndKeepsPracticeUntimed() {
         val oldMode = Room.localGameMode
         val oldLimit = Room.aiBattleTimeLimitMs
         try {
@@ -52,16 +52,28 @@ class GameOverTest {
             val body = encode(packets.single { opcodeOf(it) == 150 })
             try {
                 assertEquals(1, body.Decode1, "Preserve the normal battle result document type")
-                assertEquals(1, body.Decode1, "Opponent wins when the challenge expires")
+                assertEquals(255, body.Decode1, "There is no winning team when the clock expires")
                 body.skipBytes(9)
                 assertEquals(1, body.Decode1)
                 body.Decode4
-                assertEquals(2, body.Decode1, "Timeout must use the verified loss enum")
+                assertEquals(1, body.Decode1, "Timeout must use the native draw enum")
             } finally { body.release() }
-            assertEquals(bnbemu.server.LocalEconomy.walletLimit,user.lucci)
+            assertEquals(bnbemu.server.LocalEconomy.startingGold + 100_000,user.lucci)
             assertEquals(25000,bnbemu.server.LocalShop.store.account(user.accountKey).totalExperience)
             repeat(30) { Room.checkAiBattleTimeout(Long.MAX_VALUE) }
-            assertEquals(bnbemu.server.LocalEconomy.walletLimit,bnbemu.server.LocalShop.store.account(user.accountKey).lucci)
+            assertEquals(bnbemu.server.LocalEconomy.startingGold + 100_000,bnbemu.server.LocalShop.store.account(user.accountKey).lucci)
+            ch.outboundMessages().clear()
+            Room.localGameMode = 0
+            Room.startGame()
+            Room.onBoardReady()
+            Room.checkAiBattleTimeout(Long.MAX_VALUE)
+            val pvp = encode(collectSent().single { opcodeOf(it) == 150 })
+            try {
+                pvp.skipBytes(1)
+                assertEquals(255, pvp.Decode1)
+                pvp.skipBytes(14)
+                assertEquals(1, pvp.Decode1)
+            } finally { pvp.release() }
             ch.outboundMessages().clear()
             Room.localGameMode = 15
             Room.startGame()
@@ -70,6 +82,22 @@ class GameOverTest {
             Room.checkMonsterTimeout(Long.MAX_VALUE)
             assertFalse(Room.gameOverSent, "Practice must stay untimed")
         } finally { Room.localGameMode = oldMode; Room.aiBattleTimeLimitMs = oldLimit }
+    }
+
+    @Test fun dartHitAcceleratesTheMatchingBombInBattle() {
+        val oldMode = Room.localGameMode
+        try {
+            Room.localGameMode = 16
+            Room.startGame()
+            Room.addBomb(1, 6, 10, bombId = 20, broadcastInitialState = false)
+            val until = System.nanoTime() + 1_000_000_000L
+            while (Room.getBomb(20) == null && System.nanoTime() < until) Thread.sleep(2)
+            val bomb = requireNotNull(Room.getBomb(20))
+            val originalExpiry = bomb.expireAt
+            ch.writeInbound(Unpooled.wrappedBuffer("A5 05 A5 7D 5C 50 A5 59".toBA()))
+            while (bomb.expireAt == originalExpiry && System.nanoTime() < until) Thread.sleep(2)
+            assertTrue(bomb.expireAt < originalExpiry, "Captured C108 should shorten the fuse")
+        } finally { Room.localGameMode = oldMode }
     }
 
     @Test fun realBattleSettlementCreditsOnlyOnceAndUsesPersistedRewardsInResultPacket() {
@@ -89,18 +117,26 @@ class GameOverTest {
                 body.Decode4; body.Decode1; repeat(3) { body.Decode1 }
                 assertEquals(50000, body.Decode4)
                 assertEquals(0, body.Decode1)
-                assertEquals(100000, body.Decode4)
+                assertEquals(200000, body.Decode4)
             } finally { body.release() }
-            assertEquals(105000,user.lucci)
+            assertEquals(205000,user.lucci)
             assertEquals(44,user.level);assertEquals(550,user.exp)
             repeat(30) { Room.onLastTeamStanding(0) }
-            assertEquals(105000,bnbemu.server.LocalShop.store.account(user.accountKey).lucci)
+            assertEquals(205000,bnbemu.server.LocalShop.store.account(user.accountKey).lucci)
             ch.outboundMessages().clear()
             Room.startGame()
             Room.onLastTeamStanding(1)
-            collectSent()
+            val loss = encode(collectSent().single { opcodeOf(it) == 150 })
+            try {
+                loss.skipBytes(11)
+                assertEquals(1, loss.Decode1)
+                loss.Decode4; loss.Decode1; repeat(3) { loss.Decode1 }
+                assertEquals(25000, loss.Decode4)
+                assertEquals(0, loss.Decode1)
+                assertEquals(100000, loss.Decode4)
+            } finally { loss.release() }
             val after = bnbemu.server.LocalShop.store.account(user.accountKey)
-            assertEquals(155000,after.lucci)
+            assertEquals(305000,after.lucci)
             assertEquals(75000,after.totalExperience)
         } finally { Room.localGameMode = oldMode }
     }
@@ -761,7 +797,7 @@ class GameOverTest {
         assertEquals(33, nativeIds.getValue("Cemetery21"))
         assertEquals(86, nativeIds.getValue("MonPen20"))
         val stages = bnbemu.server.LocalMonsterStages.stages
-        assertEquals(123, stages.size)
+        assertEquals(133, stages.size)
         for (name in stages.keys) {
             val packet = encode(bnbemu.packet.room.MonsterNextBoard(name, 123))
             try {
@@ -770,6 +806,36 @@ class GameOverTest {
                 assertEquals(0, packet.Decode2); assertEquals(0, packet.Decode1)
                 assertEquals(0, packet.readableBytes())
             } finally { packet.release() }
+        }
+    }
+
+    @Test fun tenBossRebuildsTheSceneBeforeStartingItsSecondBoard() {
+        val oldMode = Room.localGameMode
+        val oldMap = Room.mapId
+        try {
+            Room.localGameMode = 14
+            Room.slots.forEach { it.isAI = false }
+            val first = bnbemu.handler.room.mapIdTable.entries.single { it.value.name == "MonUnlimited01" }
+            Room.mapId = first.key
+            Room.startGame(first.key)
+            Room.onBoardReady()
+            drain()
+            Room.onMonsterDamage(0, 20, 0)
+            Room.onMonsterFinish(0, 0)
+            val ops = mutableListOf<Int>()
+            val deadline = System.nanoTime() + 8_000_000_000L
+            while (136 !in ops && System.nanoTime() < deadline) {
+                ops += drain().map(::opcodeOf)
+                Thread.sleep(10)
+            }
+            assertTrue(150 in ops, "Show the stage-clear result first")
+            assertTrue(155 in ops, "Destroy the old game stage before loading")
+            assertTrue(112 in ops && 136 in ops, "Use the normal room start handshake")
+            assertTrue(ops.indexOf(150) < ops.indexOf(155) && ops.indexOf(155) < ops.indexOf(112), ops.toString())
+            assertEquals(first.key, Room.mapId, "A new run from the room must still start from board one")
+        } finally {
+            Room.mapId = oldMap
+            Room.localGameMode = oldMode
         }
     }
 

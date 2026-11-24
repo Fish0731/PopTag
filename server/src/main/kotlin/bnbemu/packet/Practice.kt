@@ -21,7 +21,9 @@ import bnbemu.server.User
 
 // ---- op 83 SessionSimpleInfo (6B): E1(0) E1(0) E2(75) E1(15) E1(0) ----
 fun SessionSimpleInfo(gameMode: Int = 15) = PKT {
-    EncodeBuffer(EN_OP83.copyOfRange(0, 4))
+    Encode1(0)
+    Encode1(0)
+    Encode2(LOCAL_ROOM_NUMBER)
     Encode1(gameMode)
     EncodeBuffer(EN_OP83.takeLast(1).toByteArray())
 }
@@ -74,14 +76,28 @@ private fun SendPacketBase.encodePracticePlayerInfo(blob: ByteArray, bombStyle: 
     if (user == null) EncodeBuffer(blob.copyOfRange(infoStart, accessoryOffset)) else {
         EncodeBuffer(blob.copyOfRange(infoStart, infoStart + 11))
         Encode2(user.level)
-        EncodeBuffer(blob.copyOfRange(infoStart + 13, accessoryOffset))
+        EncodeBuffer(blob.copyOfRange(infoStart + 13, infoStart + 17))
+        // The board roster calls 686B0C on CSimpleUserInfo +0xB4 for its nameplate.
+        Encode4(bnbemu.server.localNamePlateStyle(user))
+        EncodeBuffer(blob.copyOfRange(infoStart + 21, accessoryOffset))
     }
     // PSlotAccessory::Read (0x44A856), followed by CSessionContext setters
     // 0x687455 and 0x687217. Preserve the two-byte prefix and trailing flags.
     EncodeBuffer(blob.copyOfRange(accessoryOffset, accessoryOffset + 2))
     val definitions = bnbemu.server.localAppearanceDefinitions(user)
     encodeAppearanceDefinitions(definitions)
-    EncodeBuffer(blob.copyOfRange(blob.size - 7, blob.size - 5))
+    // PSlotAccessory +0x74 and +0x78 carry the trail style and upgrade.
+    // The board copies both fields from the session to its running character.
+    val motionBlur = definitions.lastOrNull {
+        it.name == "Item/MotionBlur" && it.category == 12 && it.targetCharId == 8 && it.param in 2..6
+    }
+    if (motionBlur == null) EncodeBuffer(blob.copyOfRange(blob.size - 7, blob.size - 6))
+    else Encode1(motionBlur.param)
+    val advancedMotionBlur = motionBlur != null && definitions.any {
+        it.name == "Item/AdvMotionBlur" && it.category == 20 && it.targetCharId == 8 && it.param == 1
+    }
+    if (advancedMotionBlur) Encode1(1)
+    else EncodeBuffer(blob.copyOfRange(blob.size - 6, blob.size - 5))
     Encode4(bombStyle)
     encodeAvatarDefinitions(definitions)
 }

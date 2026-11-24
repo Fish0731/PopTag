@@ -2,6 +2,9 @@ package bnbemu.netty
 
 import bnbemu.packet.ItemDef
 import bnbemu.packet.ShopCatalog
+import bnbemu.packet.ShopPackages
+import bnbemu.packet.Unk66
+import io.netty.buffer.Unpooled
 import bnbemu.server.LocalShopStore
 import bnbemu.server.PurchaseStatus
 import bnbemu.server.localInventoryEntries
@@ -38,4 +41,60 @@ class ShopExpansionV2Test {
         assertTrue(ItemDef.DEFAULT_ITEMS.any { it.category==19 && it.skinId==6 && it.targetCharId==2 })
         assertTrue(ItemDef.DEFAULT_ITEMS.any { it.category==19 && it.skinId==5 && it.targetCharId==2 })
     }
+    @Test fun packageMapLinksRealProductsAndPurchaseCommitsEveryPermanentComponent() {
+        val catalog = ShopCatalog.DEFAULT_ITEMS
+        val bundle = catalog.single { it.name == "加冕典礼" }
+        val items = requireNotNull(ShopPackages.items(bundle.prodId)).toSet()
+        assertEquals(setOf(960030214, 960030215, 980030223, 980030224), items)
+        val body = Unpooled.buffer()
+        try {
+            Unk66().encode(SendPacketBase(body, 3))
+            val size = body.Decode4
+            assertEquals(size, body.readableBytes())
+            val decoded = ByteArray(size)
+            for (offset in decoded.indices step 4) {
+                val value = body.readInt() xor 0x96CA5395.toInt()
+                repeat(4) { decoded[offset + it] = (value ushr (it * 8)).toByte() }
+            }
+            val data = java.nio.ByteBuffer.wrap(decoded).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            assertEquals(0x18, data.get().toInt())
+            assertEquals(size - 5, data.int)
+            assertEquals(0, data.get().toInt())
+            val rows = List(data.short.toInt()) { data.int to data.int }
+            assertFalse(data.hasRemaining())
+            val byProduct = catalog.associateBy { it.prodId }
+            assertEquals(items, rows.filter { it.first == bundle.prodId }
+                .map { byProduct.getValue(it.second).itemId }.toSet())
+        } finally { body.release() }
+
+        val store = LocalShopStore(directory)
+        val purchase = store.purchase("local-bundle", bundle)
+        assertEquals(PurchaseStatus.OK, purchase.status)
+        assertEquals(3_000_000 - bundle.tail.price1, purchase.account.lucci)
+        val saved = LocalShopStore(directory).account("local-bundle")
+        assertEquals(items.associateWith { 1 }, saved.items)
+        assertTrue(localInventoryEntries(saved, 0, emptyList()).all { entry -> entry.expireDate.all { it == 0.toByte() } })
+        assertEquals(PurchaseStatus.INSUFFICIENT_FUNDS, store.purchase("local-bundle", bundle, 99).status)
+        assertEquals(saved, store.account("local-bundle"))
+    }
+
+    @Test fun advancedMotionBlurKeepsItsNativeCategoryAndOwnership() {
+        val definition = ItemDef.DEFAULT_ITEMS.single { it.itemId == 10023 }
+        val product = ShopCatalog.DEFAULT_ITEMS.single { it.itemId == definition.itemId }
+        assertEquals("Item/AdvMotionBlur", definition.name)
+        assertEquals(20, definition.category)
+        assertEquals(20, product.category)
+        assertEquals(definition.desc, product.name)
+        assertEquals(320_000, product.tail.price1)
+        assertEquals(1, product.tail.f9)
+        val store = LocalShopStore(directory)
+        val purchase = store.purchase("advanced-motion-blur", product)
+        assertEquals(PurchaseStatus.OK, purchase.status)
+        assertEquals(2_680_000, purchase.account.lucci)
+        val restored = LocalShopStore(directory).account("advanced-motion-blur")
+        val entry = localInventoryEntries(restored, 0, emptyList()).single()
+        assertEquals(definition.itemId, entry.itemId)
+        assertEquals(definition.name, entry.token)
+    }
+
 }

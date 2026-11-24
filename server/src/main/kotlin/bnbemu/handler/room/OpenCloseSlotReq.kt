@@ -45,6 +45,11 @@ val OpenCloseSlotReq = PKTHandler { c ->
         }
         val action = raw and 0x0F
         val isClosing = (action and 1) != 0
+        if (!isClosing && !existing.isAI && Room.localGameMode == 16 &&
+            Room.slots.count { it.user != null || it.isAI } >= localMapSeatLimit(Room.mapId)) {
+            c.send(PracticeSlotReady(slotIdx, 1))
+            return@PKTHandler
+        }
 
         // Human PvP opens/closes an empty seat; it must never fabricate an NPC.
         if (Room.localGameMode == 0) {

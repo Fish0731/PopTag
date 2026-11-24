@@ -11,7 +11,7 @@ import java.nio.file.Path
 class Classic057ClothingTest {
     @TempDir lateinit var directory: Path
     @Test fun allClassicClothesAndHatsHavePermanentPurchasableGoldProducts() {
-        val definitions=ItemDef.DEFAULT_ITEMS.filter { it.itemId in 980_000_000 until 990_000_000 }
+        val definitions=ItemDef.DEFAULT_ITEMS.filter { it.itemId in 980_000_000 until 985_000_000 }
         assertEquals(126,definitions.size)
         assertEquals(mapOf(5 to 63,6 to 63),definitions.groupingBy { it.skinId }.eachCount())
         assertEquals(mapOf(10 to 56,11 to 70),definitions.groupingBy { it.targetCharId }.eachCount())
@@ -48,12 +48,12 @@ class Classic057ClothingTest {
     }
     @Test fun homeSlotsSellTheShownBackgroundsAndClassicBubbles() {
         val home=ShopCatalog.DEFAULT_ITEMS.filter { it.tail.f7.toInt() < -1000 }
-        assertEquals(13,home.size)
+        assertEquals(45,home.size)
         val definitions=ItemDef.DEFAULT_ITEMS.associateBy {it.itemId}
         val recommended=home.filter {it.tail.f7.toInt()<= -10000}
         assertEquals(setOf(5021,5022,5025,5026,5023,5024,5027),recommended.map { definitions.getValue(it.itemId).skinId }.toSet())
         assertTrue(recommended.all {definitions.getValue(it.itemId).targetCharId==1})
-        val bubbles=(home-recommended.toSet()).sortedBy {it.tail.f7.toInt()}
+        val bubbles=(home-recommended.toSet()).sortedBy {it.tail.f7.toInt()}.take(6)
         assertEquals(listOf(41,14,9,27,32,28),bubbles.map {definitions.getValue(it.itemId).param})
         assertTrue(bubbles.all {definitions.getValue(it.itemId).category==14})
     }

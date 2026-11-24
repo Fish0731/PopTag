@@ -38,6 +38,7 @@ val UserRestrictReq = PKTHandler { c ->
 
     if (isMe == 1) {
         val slotIndex = Decode1
+        c.ownProfilePlayerIndex = slotIndex.takeIf { c.users.getOrNull(it) != null }
         sendUserInfo(c, slotIndex)
     } else {
         sendOtherUserInfo(c, charName)

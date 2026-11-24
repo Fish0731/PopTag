@@ -9,6 +9,20 @@ import java.nio.file.Path
 import java.nio.file.Files
 
 class LocalEquipmentTest {
+    @Test fun practiceNeedleDoesNotOverwritePurchasedStocks() {
+        val account = LocalShopAccount(items = mapOf(10000 to 10, 10001 to 20, 10005 to 7, 10010 to 6),
+            equipment = mapOf(0 to mapOf(0 to 10000, 1 to 10005, 4 to 10010)))
+        val round = localInventoryEntries(account, 0, emptyList(), matchSupplyEntries(15))
+        assertEquals(listOf(255 to 1, 0 to 1), round.filter { it.itemId == 10000 }.map { it.slot to it.param })
+        assertEquals(20, round.single { it.itemId == 10001 }.param)
+        assertEquals(1, round.single { it.itemId == 10005 }.slot)
+        assertEquals(4, round.single { it.itemId == 10010 }.slot)
+        val lobby = localInventoryEntries(account, 0, emptyList())
+        assertEquals(10, lobby.single { it.itemId == 10000 }.param)
+        assertEquals(20, lobby.single { it.itemId == 10001 }.param)
+        assertEquals(1, lobby.single { it.itemId == 10005 }.slot)
+    }
+
     @TempDir lateinit var directory: Path
     private val bomb = 930000045
     private fun product(id: Int = bomb) = ShopItemEntry(id, 14, "Test", itemId=id, tail=ShopItemTail(price1=1))
@@ -82,6 +96,44 @@ class LocalEquipmentTest {
                     assertEquals(face.param,body.Decode4)
                     assertEquals(0,body.readableBytes())
                 } finally { body.release() }
+            }
+        } finally { channel.finishAndReleaseAll() }
+    }
+
+    @Test fun equippedMotionBlurIsEncodedInEachPlayersNativeStyleByte() {
+        val socket = ClientSocket()
+        val channel = io.netty.channel.embedded.EmbeddedChannel(socket)
+        val first = User(socket, 91005, "motion-blur-one")
+        val second = User(socket, 91006, "motion-blur-two")
+
+        fun tail(packet: PKT): List<Int> {
+            val body = io.netty.buffer.Unpooled.buffer()
+            try {
+                packet.encode(SendPacketBase(body, 3))
+                body.readerIndex(body.writerIndex() - 7)
+                return listOf(body.Decode1, body.Decode1, body.Decode4, body.Decode1)
+            } finally { body.release() }
+        }
+
+        try {
+            val slots = listOf(first to 30273, second to 90118)
+            val defaultTail = tail(PracticeStartInfo(45))
+            slots.forEachIndexed { slot, (user, itemId) ->
+                val style = if (slot == 0) 3 else 6
+                val expected = listOf(style, defaultTail[1], 45, 0)
+                val product = ShopItemEntry(itemId, 12, "Motion blur", itemId = itemId, tail = ShopItemTail(price1 = 1))
+                LocalShop.store.purchase(user.accountKey, product)
+                LocalShop.store.changeEquipment(user.accountKey, 0, listOf(20 to itemId))
+                assertEquals(expected, tail(PracticeRoomInfo(45, user, slot)))
+                assertEquals(expected, tail(PracticeStartInfo(45, user, slot)))
+                val upgrade = ShopItemEntry(10023, 20, "Advanced motion blur", itemId = 10023, tail = ShopItemTail(price1 = 1))
+                LocalShop.store.purchase(user.accountKey, upgrade)
+                LocalShop.store.changeEquipment(user.accountKey, 0, listOf(21 to 10023))
+                val upgraded = listOf(style, 1, 45, 0)
+                assertEquals(upgraded, tail(PracticeRoomInfo(45, user, slot)))
+                assertEquals(upgraded, tail(PracticeStartInfo(45, user, slot)))
+                LocalShop.store.changeEquipment(user.accountKey, 0, listOf(20 to 0, 21 to 0))
+                assertEquals(defaultTail, tail(PracticeStartInfo(45, user, slot)))
             }
         } finally { channel.finishAndReleaseAll() }
     }

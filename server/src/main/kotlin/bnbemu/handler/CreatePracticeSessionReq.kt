@@ -13,6 +13,7 @@ import bnbemu.packet.PracticeSlot114
 import bnbemu.packet.PracticeSlotReady
 import bnbemu.packet.PracticeUserInventory
 import bnbemu.packet.PracticeUnk423
+import bnbemu.packet.RoomEntry
 import bnbemu.packet.RoomList
 import bnbemu.packet.SessionInfoResult
 import bnbemu.packet.SessionSimpleInfo
@@ -84,7 +85,7 @@ val CreatePracticeSessionReq = PKTHandler { c ->
     }
 
     c.send(
-        RoomList(emptyList()),
+        RoomList(listOf(RoomEntry.local())),
         SessionSimpleInfo(gameMode = request.gameMode),
         UserSimpleInfoResult(), SessionInfoResult(c.users),
         Unk113(),

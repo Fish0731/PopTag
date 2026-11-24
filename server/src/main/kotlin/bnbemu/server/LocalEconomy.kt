@@ -10,7 +10,7 @@ object LocalEconomy {
     }
     private fun value(key: String) = config.getProperty(key).toInt().also { require(it >= 0) }
     val startingGold = value("starting.gold")
-    val walletLimit = 3_000_000
+    val walletLimit = value("wallet.limit").also { require(it >= startingGold) }
     // National published level table reaches 720. Keep the user's local XP curve.
     val maxLevel = 720
     fun experienceToNext(level: Int) = 100 + 50 * (level.coerceIn(1,maxLevel) - 1)
@@ -35,8 +35,8 @@ object LocalEconomy {
     fun resultReward(requested: Reward, actual: Reward): Reward = requested.copy(experience = actual.experience)
     fun walletLimitNotice(requested: Reward, actual: Reward): String? = when {
         requested.gold<=0 || actual.gold>=requested.gold -> null
-        actual.gold==0 -> "金币已达300万上限，本局金币不再增加；经验照常结算。"
-        else -> "金币已达300万上限，本局仅增加${actual.gold}金币；经验照常结算。"
+        actual.gold==0 -> "金币已达${walletLimit}上限，本局金币不再增加；经验照常结算。"
+        else -> "金币已达${walletLimit}上限，本局仅增加${actual.gold}金币；经验照常结算。"
     }
     fun reward(mode: Int, won: Boolean, boss: Boolean = false): Reward {
         val key = when {

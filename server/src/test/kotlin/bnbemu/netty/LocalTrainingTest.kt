@@ -77,7 +77,7 @@ class LocalTrainingTest {
         }
     }
 
-    @Test fun localTrainingAndBattlePlayersHaveNeedleHotkeys() {
+    @Test fun onlyLocalTrainingGrantsNeedleHotkeys() {
         val mode = Room.localGameMode
         fun entries(inGame: Boolean = true): List<Pair<Int, Int>> {
             val b = Unpooled.buffer()
@@ -100,10 +100,10 @@ class LocalTrainingTest {
             assertTrue(entries().containsAll(listOf(10000 to 0, 10000 to 255)))
             assertEquals(2, entries().count { it.first == 10000 }, "Unused 2P inventory must not receive match supplies")
             assertFalse(entries(inGame = false).any { it.first == 10000 }, "Room/lobby inventory must not retain match needles")
-            Room.localGameMode = 16
-            assertTrue(entries().containsAll(listOf(10000 to 0, 10000 to 255)))
-            Room.localGameMode = 0
-            assertFalse(entries().any { it.first == 10000 })
+            for (battleMode in listOf(0, 14, 16)) {
+                Room.localGameMode = battleMode
+                assertFalse(entries().any { it.first in 10000..10004 })
+            }
             assertEquals("Item/ItemNiddle", ItemDef.DEFAULT_ITEMS.single { it.itemId == 10000 }.name)
             assertEquals("Item/Shield", ItemDef.DEFAULT_ITEMS.single { it.itemId == 10001 }.name)
         } finally { Room.localGameMode = mode }

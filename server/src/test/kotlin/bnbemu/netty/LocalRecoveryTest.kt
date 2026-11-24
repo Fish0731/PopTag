@@ -8,20 +8,14 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class LocalRecoveryTest {
-    @Test fun battleNeedleUseDoesNotRefillAndEveryNewRoundGetsOneCharge() {
+    @Test fun battleNeedleUseDoesNotRefillOrGrantRoundStock() {
         val socket = ClientSocket()
         val channel = EmbeddedChannel(socket)
         val mode = Room.localGameMode
         try {
             Room.localGameMode = 16
             repeat(2) {
-                val stock = Unpooled.buffer()
-                try {
-                    needleStockPackets().single().encode(SendPacketBase(stock, 3))
-                    assertEquals(0, stock.Decode1)
-                    assertEquals(10000, stock.Decode4)
-                    assertEquals(1, stock.Decode4, "Each new round provisions one needle")
-                } finally { stock.release() }
+                assertTrue(needleStockPackets().isEmpty(), "Battle never grants a free needle")
                 val used = Unpooled.buffer()
                 SendPacketBase(used, 3).apply {
                     Encode2(154); Encode2(0); Encode2(0); Encode2(0); Encode2(0)
@@ -117,10 +111,10 @@ class LocalRecoveryTest {
         assertEquals(1, ItemDef.DEFAULT_ITEMS.single { it.itemId == 10000 }.category)
         val body = Unpooled.buffer()
         try {
-            needleStockPackets().single().encode(SendPacketBase(body, 3))
+            needleStockPackets(mode = 15).single().encode(SendPacketBase(body, 3))
             assertEquals(0, body.Decode1)
             assertEquals(10000, body.Decode4)
-            assertEquals(1, body.Decode4, "2026-11-08 用户要求: 道具栏携带 1 根 (可拾取地图掉落针)")
+            assertEquals(1, body.Decode4, "Practice represents its unlimited needle as one displayed charge")
             body.Decode4
             assertEquals(255, body.Decode1, "Stock must enter the owned bag before equipping type 8")
         } finally { body.release() }

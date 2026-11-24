@@ -93,6 +93,8 @@ object LocalChineseNames {
     }
 
     fun map(record: FxdynRecord): String {
+        // The national map table itself names this campaign in English.
+        if (record.group == "MonUnlimited") return record.display
         officialMapNames[record.name]?.let { return it }
         if (record.name == "HotRandom") return "热门随机"
         val group = mapGroups[record.group] ?: error("Untranslated map group ${record.group}")

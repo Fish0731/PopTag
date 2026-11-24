@@ -145,3 +145,10 @@ MonsterBossLocked: 151
 MonsterSpeed: 151
 
 MonsterLaser: 268
+
+SpawnMapGhost: 158
+
+UseDrillResult: 156
+
+AutoReadyResult: 304
+DiscardItemResult: 206

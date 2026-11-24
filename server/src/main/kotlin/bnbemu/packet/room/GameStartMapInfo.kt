@@ -57,7 +57,8 @@ fun GameStartMapInfo(
     field1: Int = 0,
     field2: Int = 0,
     timeLimitSec: Int = 0,
-    useSelectedColors: Boolean = false
+    useSelectedColors: Boolean = false,
+    resolvedBombers: Map<Int, Int> = emptyMap()
 ) = PKT {
     Encode4(randomSeed)
     Encode2(themeId)
@@ -74,7 +75,7 @@ fun GameStartMapInfo(
 
     for (i in roster) {
         val slot = Room.slots.getOrNull(i)
-        val bomberId = slot?.bomber?.toInt()?.let { if (it == 0) 5 else it } ?: 5
+        val bomberId = resolvedBombers[i] ?: slot?.bomber?.toInt()?.let { if (it == 0) 5 else it } ?: 5
         // Live solo practice also uses the room's selected color. Keep the
         // no-argument captured packet unchanged for protocol replay.
         val team = if (gameOptions == 0 || useSelectedColors && gameOptions == 15)

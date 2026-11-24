@@ -8,6 +8,9 @@ import bnbemu.netty.PassportServer
 import bnbemu.packet.UserDynamicInfo
 import bnbemu.packet.UserEquipEntry
 import bnbemu.packet.UserInfoResult
+import bnbemu.server.LocalShop
+import bnbemu.server.LocalShopStore
+import bnbemu.server.RANDOM_BOMBER
 import bnbemu.server.Room
 import bnbemu.server.bomber
 
@@ -45,11 +48,13 @@ fun sendUserInfo(c: ClientSocket, slotIndex: Int = 0) {
 
     // 根据当前槽位选中的角色动态配置角色卡与装扮
     val userSlot = Room.slots.find { it.user === user }
-    val currentBomber = userSlot?.bomber?.toInt() ?: user?.selectedBomber ?: 6
+    val currentBomber = userSlot?.bomber?.toInt()?.takeUnless { it == RANDOM_BOMBER } ?: user?.selectedBomber ?: 6
     val charItemId = if (currentBomber == 10) 2082 else currentBomber.coerceIn(0, 7) + 1
     val equips = listOf(
         UserEquipEntry(itemId = charItemId, slot = 15, param1 = 20, param2 = 0),
-        UserEquipEntry(itemId = 10006, slot = 13, param1 = 1, param2 = 0),
+        UserEquipEntry(itemId = if (user != null &&
+            LocalShopStore.BAG_EXPANSION_ID in LocalShop.store.account(user.accountKey).items
+        ) LocalShopStore.BAG_EXPANSION_ID else 10006, slot = 13, param1 = 1, param2 = 0),
         UserEquipEntry(itemId = 2082, slot = 4, param1 = 1, param2 = 0)
     )
 

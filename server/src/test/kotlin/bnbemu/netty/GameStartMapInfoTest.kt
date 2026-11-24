@@ -187,7 +187,7 @@ class GameStartMapInfoTest {
     @Test
     fun testLoadMapIdTable() {
         val decoded = loadMapIdTable()
-        assertEquals(bnbemu.data.FxdynMapInfo.records.count { it.flag == 0 } + 98, decoded.size)
+        assertEquals(bnbemu.data.FxdynMapInfo.records.count { it.flag == 0 } + 109, decoded.size)
         assertTrue(decoded.values.none { it.name.startsWith("MonGolem") },
             "Map names without client resources must not be advertised")
         assertEquals(28, decoded.values.count { it.name.startsWith("MonSeal") })

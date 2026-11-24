@@ -11,10 +11,19 @@ class ShopHomeTest {
         assertEquals(catalog, encoded)
         val fresh = encoded.filter { it.tail.f7.toInt() in -9999..-1001 }
         val recommended = encoded.filter { it.tail.f7.toInt() <= -10000 }
-        assertEquals(6, fresh.size)
+        assertEquals(38, fresh.size)
         assertEquals(7, recommended.size)
-        assertEquals(13, (fresh + recommended).map { it.prodId }.distinct().size)
+        assertEquals(45, (fresh + recommended).map { it.prodId }.distinct().size)
         val definitions = ItemDef.DEFAULT_ITEMS.associateBy { it.itemId }
+        val featured = fresh.sortedBy { it.tail.f7.toInt() }
+        assertEquals(listOf(
+            41, 14, 9, 27, 32, 28, 15, 16, 12, 38, 19, 17, 11, 10, 8, 7, 5, 4,
+            23, 22, 42, 43, 24, 35, 3, 18, 34, 29, 13, 30, 61, 45,
+        ),
+            featured.take(32).map { definitions.getValue(it.itemId).param })
+        assertTrue(featured.take(32).all { it.category == 14 })
+        assertEquals(listOf(10023, 900800002, 30273, 900800004, 900800005, 90118),
+            featured.drop(32).map { it.itemId })
         val ordered = recommended.sortedBy { it.tail.f7.toInt() }
         assertEquals(listOf(5021,5022,5025,5026), ordered.take(4).map { definitions.getValue(it.itemId).skinId })
         assertEquals(listOf(5023,5024,5027), ordered.drop(4).map { definitions.getValue(it.itemId).skinId })

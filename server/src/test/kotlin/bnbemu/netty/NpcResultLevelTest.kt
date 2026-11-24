@@ -37,7 +37,7 @@ class NpcResultLevelTest {
         assertEquals(100 to 0,LocalEconomy.progress(oldCap))
         assertTrue(LocalEconomy.progress(oldCap+50000).first>100)
         assertEquals(720,LocalEconomy.maxLevel)
-        assertEquals(3_000_000,LocalEconomy.walletLimit)
+        assertEquals(9_999_999,LocalEconomy.walletLimit)
         assertEquals(100,LocalEconomy.experienceToNext(1))
         assertEquals(5050,LocalEconomy.experienceToNext(100))
         assertEquals(720 to 0,LocalEconomy.progress(LocalEconomy.maxExperience))

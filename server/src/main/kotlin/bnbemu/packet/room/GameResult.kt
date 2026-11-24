@@ -30,11 +30,12 @@ fun GameResult(
     missionClear: Boolean = true,
     rewards: Map<Int, bnbemu.server.LocalEconomy.Reward> = emptyMap()
 ) = PKT {
+    val draw = winnerTeam == -1
     val monsterMode = Room.localGameMode == 14
     val monsterFailed = monsterMode && winnerTeam != 0
     // 1. Header (11 字节)
     Encode1(if (monsterFailed || !missionClear) 0 else 1) // No mission-clear effect on failure.
-    Encode1(winnerTeam)  // winnerTeam / slot
+    Encode1(winnerTeam) // The native decoder reads -1 as the signed no-winner value.
     Encode1(0)           // unk3
     Encode1(0)           // Never claim a perfect victory for a failed round.
     Encode1(0)           // unk5
@@ -59,7 +60,7 @@ fun GameResult(
             // 0=win, 1=draw, 2=loss; native 0x53F534 -> 0x53358E ->
             // 0x559239 (CGOLoseGlyph). Verified with isolated native execution.
             val won=if(Room.localGameMode==0) slot.color.toInt()==winnerTeam else winnerTeam==0
-            Encode1(if (won) 0 else 2)
+            Encode1(if (draw) 1 else if (won) 0 else 2)
             Encode1(0)
             Encode1(0)
             Encode1(0)
@@ -91,7 +92,7 @@ fun GameResult(
             Encode1(0)
         } else if (isAI) {
             Encode1(2) // slotType = 2 (AI Bot)
-            Encode1(if (winnerTeam == 0) 2 else 0) // NPC loses when the human wins.
+            Encode1(if (draw) 1 else if (winnerTeam == 0) 2 else 0)
             Encode1(0)
             Encode1(0)
             Encode2(if (Room.localGameMode == 16) bnbemu.server.npcDifficultyBadgeLevel(slot!!.npcDifficulty) else slot!!.AILevel)

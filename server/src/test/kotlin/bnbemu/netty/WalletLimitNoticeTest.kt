@@ -10,13 +10,13 @@ class WalletLimitNoticeTest {
     @Test fun cappedAwardsExplainTheActualCreditAndUncappedAwardsStaySilent() {
         for(won in listOf(false,true)) {
             val requested=LocalEconomy.reward(16,won)
-            assertEquals(if(won)100000 else 50000,requested.gold)
+            assertEquals(if(won)200000 else 100000,requested.gold)
             assertNull(LocalEconomy.walletLimitNotice(requested,requested))
             assertTrue(requireNotNull(LocalEconomy.walletLimitNotice(requested,requested.copy(gold=0))).contains("不再增加"))
             assertTrue(requireNotNull(LocalEconomy.walletLimitNotice(requested,requested.copy(gold=20000))).contains("20000金币"))
         }
         assertNull(LocalEconomy.walletLimitNotice(LocalEconomy.Reward(),LocalEconomy.Reward()))
-        assertEquals(3000000,LocalEconomy.walletLimit)
+        assertEquals(9999999,LocalEconomy.walletLimit)
     }
     @Test fun resultShowsRoundAwardEvenWhenWalletIsFullOrPartiallyCapped() {
         for(won in listOf(false,true)) {

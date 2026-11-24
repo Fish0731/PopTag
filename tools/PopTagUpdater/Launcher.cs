@@ -62,6 +62,16 @@ namespace PopTagUpdate {
     var data=await ReadSmall(c,a.browser_download_url,8000000);
     var m=Engine.Json.Deserialize<Manifest>(System.Text.Encoding.UTF8.GetString(data));Engine.ValidateGameRelease(m);
     if(m.version!=release.tag_name)throw new InvalidDataException("版本清单与发布标签不一致");
+    var current=Path.Combine(engine.State,"current.json");
+    if(File.Exists(current)){
+     var installed=Engine.Json.Deserialize<Manifest>(File.ReadAllText(current));
+     Version localVersion, remoteVersion;
+     if(Version.TryParse(installed.version.TrimStart('v').Split('-')[0],out localVersion)
+        && Version.TryParse(m.version.TrimStart('v').Split('-')[0],out remoteVersion)
+        && localVersion>remoteVersion){
+      report("本机版本 "+installed.version+" 比公开版更新，保留本机版本。");return;
+     }
+    }
     foreach(var b in m.bundles){var asset=release.assets.SingleOrDefault(x=>x.name==b.asset);if(asset==null||asset.size!=b.size)throw new InvalidDataException("发布附件不完整");ValidateUrl(asset.browser_download_url);}
     var needed=await Task.Run(()=>engine.Needed(m));available=m;
     report(needed.Count==0?"文件已是最新版本："+m.version:"发现版本 "+m.version+"；需下载 "+needed.Count+" 个组件，共 "+(needed.Sum(x=>x.size)/1024.0/1024).ToString("F1")+" MiB。");

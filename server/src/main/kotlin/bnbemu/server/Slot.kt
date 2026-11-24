@@ -5,6 +5,7 @@ import bnbemu.netty.SendPacketBase
 const val FLAG_CLOSED = 0x1
 const val FLAG_CHIEF = 0x2
 const val FLAG_READY = 0x4
+const val RANDOM_BOMBER = 13
 
 /**
  * 槽位在本局内的生命状态。

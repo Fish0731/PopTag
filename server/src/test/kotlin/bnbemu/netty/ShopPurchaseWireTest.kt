@@ -46,6 +46,37 @@ class ShopPurchaseWireTest {
         }
     }
 
+    @Test fun nationalBattleSuppliesUseDistinctProductsAndPersistTheirPurchasedStock() {
+        OpcodeManager.recvOps
+        val socket = ClientSocket()
+        val channel = EmbeddedChannel(socket)
+        try {
+            val user = User(socket, 91009, "battle-supplies-${UUID.randomUUID()}")
+            socket.users.add(user)
+            val initial = LocalShop.store.account(user.accountKey).lucci
+            val expected = mapOf(10000 to "Item/ItemNiddle", 10005 to "Item/Spring",
+                10001 to "Item/Shield", 75 to "Item/ItemCan", 10010 to "Item/ItemDart",
+                10002 to "Item/ItemWildGinseng",
+                20243 to "Item/Sensor", 60278 to "Item/RemoteBomb", 10024 to "Item/HollowBomb", 90177 to "Drill", 74 to "Item/ItemSpanner", 76 to "Item/ItemMotor", 77 to "Item/ItemPotion", 78 to "Item/ItemScanner")
+            val products = (91_000_001..91_000_014).map { id -> ShopCatalog.DEFAULT_ITEMS.single { it.prodId == id } }
+            assertEquals(expected.keys, products.map { it.itemId }.toSet())
+            for (p in products) {
+                val def = ItemDef.DEFAULT_ITEMS.single { it.itemId == p.itemId }
+                assertEquals(expected[p.itemId], def.name)
+                assertEquals(1, def.category)
+                assertEquals(1, p.tail.f9)
+                assertEquals(listOf(202, 122), buy(channel, p.prodId).map { OpcodeManager.getSendOp(it::class.java) })
+            }
+            val account = LocalShop.store.account(user.accountKey)
+            assertEquals(initial - products.sumOf { it.tail.price1 }, account.lucci)
+            val inventory = localInventoryEntries(account, 0, emptyList())
+            for (p in products) {
+                assertEquals(10, account.items[p.itemId])
+                assertEquals(10, inventory.single { it.itemId == p.itemId }.param)
+            }
+        } finally { channel.finishAndReleaseAll() }
+    }
+
     @Test fun rejectedPurchaseDoesNotIssueAnyStockOrMoneyUpdate() {
         OpcodeManager.recvOps
         val socket=ClientSocket();val channel=EmbeddedChannel(socket)

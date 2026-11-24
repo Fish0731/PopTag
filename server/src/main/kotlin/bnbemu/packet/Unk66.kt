@@ -1,13 +1,26 @@
 package bnbemu.packet
 
 import bnbemu.netty.PKT
-import bnbemu.netty.toBA
+import java.io.ByteArrayOutputStream
 
-// 進頻道握手推送 #12 (seq=133, 12B) — 原樣重放
+// op 66 package map. Each row links one bundle product to a component product.
 fun Unk66() = PKT {
-    EncodeBuffer(EN_UNK66_BLOB)
+    val blob = shopPackageMapBlob
+    Encode4(blob.size)
+    EncodeBuffer(blob)
 }
 
-private val EN_UNK66_BLOB = """
-    96ca539d 96ca508d 96ca5395
-""".toBA()
+private val shopPackageMapBlob by lazy {
+    val entries = ShopPackages.relationships(ShopCatalog.DEFAULT_ITEMS)
+    val plain = ByteArrayOutputStream().apply {
+        u8(0x18)
+        u32le(3 + entries.size * 8)
+        u8(0)
+        u16le(entries.size)
+        entries.forEach { (bundle, component) ->
+            u32le(bundle)
+            u32le(component)
+        }
+    }.toByteArray()
+    ssdEncode(plain)
+}

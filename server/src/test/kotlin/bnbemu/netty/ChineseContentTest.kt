@@ -25,7 +25,7 @@ class ChineseContentTest {
         before.zip(after.take(before.size)).forEach { (original, ported) ->
             assertEquals(original, ported.copy(sortOrder = original.sortOrder), original.name)
         }
-        assertEquals(98, after.size - before.size)
+        assertEquals(109, after.size - before.size)
         assertTrue(after.map { it.name }.containsAll(listOf("Monster37", "Monster38", "Monster39")))
         assertEquals(after.size, bnbemu.handler.room.loadMapIdTable().size)
     }
@@ -92,7 +92,8 @@ class ChineseContentTest {
         assertEquals(original.size, localized.size)
         original.zip(localized).forEach { (a, b) ->
             assertEquals(a, b.copy(display = a.display))
-            assertTrue(b.display.any { it in '\u3400'..'\u9fff' }, b.name)
+            if (a.group == "MonUnlimited") assertEquals(a.display, b.display)
+            else assertTrue(b.display.any { it in '\u3400'..'\u9fff' }, b.name)
         }
         assertEquals("墓地04", localized.filter { it.flag == 0 }[176].display)
         assertEquals("Cemetery04", localized.filter { it.flag == 0 }[176].name)
@@ -135,5 +136,20 @@ class ChineseContentTest {
                 if (inventory == 1) assertFalse(930000045 in ids)
             }
         } finally { body.release(); ch.finishAndReleaseAll() }
+    }
+    @Test fun tenBossStagesExposeOneEntryAndLinkAllTenNationalBoards() {
+        val records = FxdynMapInfo.localizedRecords.filter { it.group == "MonUnlimited" }
+        assertEquals(11, records.size)
+        assertEquals("Unlimited Random", records.single { it.subtype == 6 }.display)
+        assertEquals(listOf("MonUnlimited01"), records.filter { it.subtype == 0 && it.tail1 == 1 }.map { it.name })
+        val names = (1..10).map { "MonUnlimited" + it.toString().padStart(2, '0') }
+        for ((round, name) in names.withIndex()) {
+            assertEquals("Unlimited " + (round + 1).toString().padStart(2, '0'),
+                records.single { it.name == name }.display)
+            val stage = bnbemu.server.LocalMonsterStages.stages.getValue(name)
+            assertEquals(names.getOrNull(round + 1), stage.next)
+            assertEquals(setOf(0), stage.objectives)
+            assertTrue(stage.objectives.all { stage.monsters.getValue(it).boss })
+        }
     }
 }

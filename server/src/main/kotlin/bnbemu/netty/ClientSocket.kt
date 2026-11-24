@@ -30,6 +30,7 @@ class ClientSocket : SimpleChannelInboundHandler<ByteBuf>() {
 //    val users = arrayOfNulls<User>(2)
     val users = mutableListOf<User>()
     var shopPlayerIndex: Int = 0
+    var ownProfilePlayerIndex: Int? = null
 
     override fun handlerAdded(ctx: ChannelHandlerContext) {
         this.ctx = ctx

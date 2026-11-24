@@ -11,6 +11,40 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class LocalTwoPlayerTest {
+    @Test fun randomCharacterRequestAcknowledgesTheSecondPlayer() {
+        OpcodeManager.recvOps
+        val socket = ClientSocket()
+        val channel = EmbeddedChannel(socket)
+        val seat = Room.slots[1]
+        val originalUser = seat.user
+        val originalBomber = seat.bomber
+        try {
+            val first = User(socket, 29231, "random-first")
+            val second = User(socket, 29232, "random-second")
+            socket.users.addAll(listOf(first, second))
+            first.selectedBomber = 10
+            second.selectedBomber = 6
+            seat.user = second
+            val request = Unpooled.buffer()
+            SendPacketBase(request, 3).apply { Encode2(87); Encode1(1); Encode1(13) }
+            channel.writeInbound(request)
+            val reply = requireNotNull(channel.readOutbound<PKT>())
+            assertEquals(105, OpcodeManager.getSendOp(reply::class.java))
+            val body = Unpooled.wrappedBuffer(encode(reply))
+            try {
+                assertEquals(1, body.Decode1)
+                assertEquals(RANDOM_BOMBER, body.Decode1)
+                assertEquals(6, second.selectedBomber)
+                assertEquals(RANDOM_BOMBER, seat.bomber.toInt())
+                assertEquals(10, first.selectedBomber)
+            } finally { body.release() }
+        } finally {
+            seat.user = originalUser
+            seat.bomber = originalBomber
+            channel.finishAndReleaseAll()
+        }
+    }
+
     @Test fun secondPlayerShopPurchaseChargesAndDeliversOnlyToSecondAccount() {
         OpcodeManager.recvOps
         val socket=ClientSocket();val channel=EmbeddedChannel(socket)
@@ -276,10 +310,63 @@ class LocalTwoPlayerTest {
                 if(OpcodeManager.getSendOp(packet::class.java)==100) slots.add((encode(packet)[0].toInt() and 255) xor 0x5a)
             }
             assertEquals(setOf(0,1),slots)
-            assertEquals(2,needleStockPackets(2).size)
+            assertEquals(2,needleStockPackets(2, mode = 15).size)
         } finally {
             Room.reset();Room.localGameMode=mode
             Room.slots.forEachIndexed {i,s ->s.user=saved[i].first;s.isAI=saved[i].second;saved[i].third.copyInto(s.meta)}
+            channel.finishAndReleaseAll()
+        }
+    }
+    @Test fun onlyTheOwningPlayersPurchasedStockDecrements() {
+        val client = ClientSocket()
+        val channel = EmbeddedChannel(client)
+        val mode = Room.localGameMode
+        val saved = Room.slots.take(2).map { it.user }
+        val suffix = System.nanoTime()
+        val first = User(client, 29321, "consumable-first-$suffix")
+        val second = User(client, 29322, "consumable-second-$suffix")
+        val needle = ShopCatalog.DEFAULT_ITEMS.single { it.prodId == 91_000_001 }
+        val shield = ShopCatalog.DEFAULT_ITEMS.single { it.prodId == 91_000_003 }
+        val store = LocalShop.store
+        try {
+            client.users.addAll(listOf(first, second))
+            Room.slots[0].user = first
+            Room.slots[1].user = second
+            for (user in client.users) {
+                store.purchase(user.accountKey, needle)
+                store.purchase(user.accountKey, shield)
+                store.changeEquipment(user.accountKey, 0, listOf(0 to needle.itemId, 1 to shield.itemId))
+            }
+            fun use(inventory: Int, itemId: Int, previous: Int) {
+                val body = Unpooled.buffer()
+                SendPacketBase(body, 3).apply {
+                    Encode2(431); Encode1(inventory); Encode4(itemId); Encode2(previous)
+                }
+                channel.writeInbound(body)
+            }
+            fun stock(user: User, itemId: Int) = store.account(user.accountKey).items[itemId]
+
+            Room.localGameMode = 16
+            use(1, shield.itemId, 10)
+            assertEquals(10, stock(second, shield.itemId), "Lobby reports do not change stock")
+            Room.startGame()
+            use(1, shield.itemId, 10)
+            use(1, shield.itemId, 10)
+            assertEquals(10, stock(first, shield.itemId))
+            assertEquals(9, stock(second, shield.itemId))
+            assertNull(channel.readOutbound<PKT>(), "Do not reset live inventory when persisting a use")
+
+            Room.localGameMode = 15
+            Room.startGame()
+            use(1, needle.itemId, 10)
+            assertEquals(10, stock(second, needle.itemId), "Practice uses its own unlimited needle")
+            use(0, shield.itemId, 10)
+            assertEquals(9, stock(first, shield.itemId))
+        } finally {
+            Room.reset()
+            Room.localGameMode = mode
+            saved.forEachIndexed { slot, user -> Room.slots[slot].user = user }
+            Room.resetMatchState()
             channel.finishAndReleaseAll()
         }
     }

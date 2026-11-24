@@ -162,7 +162,7 @@ object ShopCatalog {
     // Cosmetic identity uses the equipped resource, not translated display names
     // or product ids. Keep ItemDef records for already-owned legacy purchases.
     internal fun appearanceKey(item: ShopItemEntry): String {
-        if (item.category !in setOf(3, 10, 12, 14, 18, 19, 29) || item.count != 1) return "product:${item.prodId}"
+        if (item.category !in setOf(3, 10, 12, 14, 18, 19, 20, 29) || item.count != 1) return "product:${item.prodId}"
         val definition = ItemDef.DEFAULT_ITEMS.firstOrNull { it.itemId == item.itemId }
             ?: return "product:${item.prodId}"
         if (definition.category == 14 && (definition.name == "Item/Bomb" || definition.name.startsWith("BombDeco/Bomb"))) {
@@ -243,18 +243,42 @@ object ShopCatalog {
      * 无法购买), 疑似超出其 fxstock 校验/解析预期。免费购买由 LocalShopStore 侧实现,
      * 与目录内容无关。
      */
+    // Local Lucci bundles. Names and functions follow the CN324 item table;
+    // the local IDs preserve existing match supplies and character cards.
+    private val battleSupplyProducts = listOf(
+        ShopItemEntry(91_000_001, 1, "针", itemId = 10000, count = 10),
+        ShopItemEntry(91_000_002, 1, "弹簧", itemId = 10005, count = 10),
+        ShopItemEntry(91_000_003, 1, "盾牌", itemId = 10001, count = 10),
+        ShopItemEntry(91_000_004, 1, "超级罐头", itemId = 75, count = 10),
+        ShopItemEntry(91_000_005, 1, "飞镖", itemId = 10010, count = 10),
+        ShopItemEntry(91_000_006, 1, "人参果", itemId = 10002, count = 10),
+        ShopItemEntry(91_000_007, 1, "雷达", itemId = 20243, count = 10),
+        ShopItemEntry(91_000_008, 1, "遥控器", itemId = 60278, count = 10),
+        ShopItemEntry(91_000_009, 1, "透明水泡", itemId = 10024, count = 10),
+        ShopItemEntry(91_000_010, 1, "电钻", itemId = 90177, count = 10),
+        ShopItemEntry(91_000_011, 1, "扳手", itemId = 74, count = 10),
+        ShopItemEntry(91_000_012, 1, "发动机", itemId = 76, count = 10),
+        ShopItemEntry(91_000_013, 1, "解毒药", itemId = 77, count = 10),
+        ShopItemEntry(91_000_014, 1, "透视镜", itemId = 78, count = 10),
+    )
+
+    internal val battleSupplyItemIds = battleSupplyProducts.map { it.itemId }.toSet()
+
     val DEFAULT_ITEMS: List<ShopItemEntry> by lazy {
-        val list = loadBaseItems().toMutableList()
+        val list = loadBaseItems().toMutableList().apply {
+            addAll(battleSupplyProducts)
+            add(ShopItemEntry(91_000_015, 13, "背包扩容", itemId = 20069, count = 1, desc = "Item/ItemBag2"))
+        }
         val listed = list.map { it.itemId }.toSet()
         val templates = list.filter { it.tail.price1 > 0 }.groupBy { it.category }
         val usedProducts = list.map { it.prodId }.toMutableSet()
         var productId = 90_000_000
         ItemDef.DEFAULT_ITEMS.sortedBy { it.itemId }
-            .filter { it.itemId !in listed && (it.category in setOf(10, 12, 14, 18, 29) ||
+            .filter { it.itemId !in listed && (it.category in setOf(10, 12, 14, 18, 20, 29) ||
                 it.category in setOf(3, 19) && it.itemId in 970_000_000 until 990_000_000) }
             .forEach { definition ->
                 val template = templates[definition.category]?.firstOrNull() ?:
-                    if (definition.category in setOf(3,19)) templates[12]?.firstOrNull() else null
+                    if (definition.category in setOf(3, 19, 20)) templates[12]?.firstOrNull() else null
                 if (template == null) return@forEach
                 while (productId in usedProducts) productId++
                 list.add(template.copy(
@@ -264,12 +288,13 @@ object ShopCatalog {
                     tail = template.tail.copy(price1 = 1000, price2 = 0)
                 ))
             }
-        refreshShopHome(uniqueCosmetics(list.filterNot { item ->
+        val singles = refreshShopHome(uniqueCosmetics(list.filterNot { item ->
             val definition = ItemDef.DEFAULT_ITEMS.firstOrNull { it.itemId == item.itemId }
             item.itemId == 2082 || definition?.category == 14 &&
                 (definition.name == "Item/Bomb" || definition.param in hiddenBubbleStyles)
         })
             .map { bnbemu.server.LocalEconomy.priced(it.copy(name = bnbemu.data.LocalChineseNames.item(it.name, it.desc, it.category, it.itemId))) })
+        singles + ShopPackages.products(singles)
     }
 
     /**

@@ -33,11 +33,14 @@ object LocalCrashProbe {
             sendLocalRoomSnapshot(client)
             client.ch.eventLoop().schedule({
                 if (client.ch.isActive) {
+                    Room.mapId = board.key
+                    Room.themeId = board.value.themeId
+                    client send bnbemu.packet.room.SelectMap(themeId = board.value.themeId, mapId = board.key)
                     needleStockPackets().forEach { client send it }
                     client send localUserInventory(client.users.first(), practice = true, inGame = true)
                     launchLocalMatch(client, board.key, board.value.themeId, replenish = false)
                     println("[CrashProbe] Started isolated board=$name; no player input required")
-                    if (name == "MonPen07") {
+                    if (name == "MonPen07" || name == "MonUnlimited01") {
                         repeat(180) { tick ->
                             client.ch.eventLoop().schedule({
                                 if (client.ch.isActive) Room.advanceCrashProbeBoards()

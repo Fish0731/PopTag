@@ -211,6 +211,18 @@ object ItemDef {
         // Red-preset NPCs look this up by name at 599DD5 before stocking
         // their native inventory. A missing definition silently skips Spring.
         list.add(ItemDefEntry(10005, 1, "Item/Spring", desc = "弹簧"))
+        // CN324 consumable definitions. Its dart ID 2 collides with the
+        // local Dizini character card, so use a separate local item ID.
+        list.add(ItemDefEntry(75, 1, "Item/ItemCan", param = 2, desc = "超级罐头"))
+        list.add(ItemDefEntry(10010, 1, "Item/ItemDart", skinId = 3, param = 7, desc = "飞镖"))
+        list.add(ItemDefEntry(20243, 1, "Item/Sensor", param = 5, desc = "雷达"))
+        list.add(ItemDefEntry(60278, 1, "Item/RemoteBomb", param = 0, desc = "遥控器"))
+        list.add(ItemDefEntry(10024, 1, "Item/HollowBomb", param = 0, desc = "透明水泡"))
+        list.add(ItemDefEntry(90177, 1, "Drill", param = 0, desc = "电钻"))
+        list.add(ItemDefEntry(74, 1, "Item/ItemSpanner", param = 0, desc = "扳手"))
+        list.add(ItemDefEntry(76, 1, "Item/ItemMotor", param = 0, desc = "发动机"))
+        list.add(ItemDefEntry(77, 1, "Item/ItemPotion", param = 0, desc = "解毒药"))
+        list.add(ItemDefEntry(78, 1, "Item/ItemScanner", param = 0, desc = "透视镜"))
         // 激活蓝妹妹 (Posh Evie / LuxuryMarid, ID 10) 角色进阶卡:
         // 对应 Item 2082: Category = 16 (0x10), skinId = 10, targetCharId = 4 (Marid)
         val idx2082 = list.indexOfFirst { it.itemId == 2082 }

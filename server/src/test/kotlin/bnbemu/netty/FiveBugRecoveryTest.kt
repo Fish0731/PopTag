@@ -27,29 +27,14 @@ class FiveBugRecoveryTest {
         } finally { body.release() }
     }
 
-    @Test fun monsterRoundSuppliesAreOneNeedleOneShieldAndOneGinseng() {
-        val entries = matchSupplyEntries(14)
-        assertEquals(listOf(10000, 10001, 10002), entries.filter { it.slot != 255 }.map { it.itemId })
-        assertEquals(listOf(0, 1, 2), entries.filter { it.slot != 255 }.map { it.slot })
-        assertTrue(entries.all { it.param == 1 })
-        for (id in listOf(10000, 10001, 10002))
-            assertEquals(1, ItemDef.DEFAULT_ITEMS.single { it.itemId == id }.category)
-        assertEquals(listOf(10000), matchSupplyEntries(16).filter { it.slot != 255 }.map { it.itemId })
-        val old = Room.localGameMode
-        try {
-            Room.localGameMode = 14
-            repeat(2) {
-                for ((index, packet) in needleStockPackets().withIndex()) {
-                    val body = Unpooled.buffer()
-                    try {
-                        packet.encode(SendPacketBase(body, 3))
-                        assertEquals(0, body.Decode1)
-                        assertEquals(10000 + index, body.Decode4)
-                        assertEquals(1, body.Decode4, "Every new round replenishes exactly one")
-                    } finally { body.release() }
-                }
-            }
-        } finally { Room.localGameMode = old }
+    @Test fun onlyPracticeGetsFreeRoundSupplies() {
+        for (mode in listOf(0, 14, 16)) {
+            assertTrue(matchSupplyEntries(mode).isEmpty())
+            assertTrue(needleStockPackets(2, mode).isEmpty())
+        }
+        val entries = matchSupplyEntries(15)
+        assertEquals(listOf(255, 0), entries.map { it.slot })
+        assertTrue(entries.all { it.itemId == 10000 && it.param == 1 })
     }
 
     @Test fun initialNpcIdentityRefreshUsesTheSelectedNpcAppearance() {

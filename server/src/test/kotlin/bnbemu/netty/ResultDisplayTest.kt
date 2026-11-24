@@ -20,7 +20,7 @@ class ResultDisplayTest {
             Room.slots.forEach { it.user=null;it.isAI=false }
             val user=User(socket,1,"result-display-test")
             Room.slots[0].user=user
-            for ((label,level,exp,gold) in listOf(Case("loss",31,25000,50000),Case("win",44,50000,100000))) {
+            for ((label,level,exp,gold) in listOf(Case("loss",31,25000,100000),Case("win",44,50000,200000))) {
                 user.level=level
                 user.exp=LocalEconomy.progress(exp).second
                 val reward=LocalEconomy.Reward(gold,exp)
